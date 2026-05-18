@@ -1,0 +1,191 @@
+# === PFAD-B FULL FILE: gui_alt/view/main_window.py ===
+
+import tkinter as tk
+from tkinter import ttk
+
+from gui_alt.view.mission_tab import MissionTab
+
+
+class MainWindow(tk.Tk):
+    """
+    Hauptfenster der Anwendung.
+    Oben: Button-Leiste
+    Mitte: Notebook mit Tabs (Mission, Home, Log, ...)
+    Unten: Statusbar
+    """
+
+    def __init__(self, controller):
+        super().__init__()
+
+        self.controller = controller
+        self.title("PX4 Ground Control")
+        self.geometry("1200x850")
+
+        # Statusbar-Variable
+        self.status_var = tk.StringVar(value="Bereit")
+
+        # Log-Buffer
+        self.log_text_widget = None
+
+        # GUI-Callbacks registrieren
+        self.controller.gui_update_status = self.update_status
+        self.controller.gui_update_log = self.append_log
+        self.controller.gui_update_mission_items = self.update_mission_items
+        self.controller.gui_update_telemetry = self.update_telemetry
+
+        # Layout
+        self._build_button_bar()
+        self._build_notebook()
+        self._build_statusbar()
+
+    # ------------------------------------------------------------
+    # UI Aufbau
+    # ------------------------------------------------------------
+    def _build_button_bar(self):
+        frame = ttk.Frame(self)
+        frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+
+        # Takeoff
+        self.btn_takeoff = ttk.Button(
+            frame,
+            text="Takeoff",
+            command=self.controller.request_takeoff,
+            state="disabled"
+        )
+        self.btn_takeoff.pack(side=tk.LEFT, padx=4)
+
+        # Land
+        self.btn_land = ttk.Button(
+            frame,
+            text="Land",
+            command=self.controller.request_land,
+            state="disabled"
+        )
+        self.btn_land.pack(side=tk.LEFT, padx=4)
+
+        # Arm
+        self.btn_arm = ttk.Button(
+            frame,
+            text="Arm",
+            command=self.controller.request_arm,
+            state="disabled"
+        )
+        self.btn_arm.pack(side=tk.LEFT, padx=4)
+
+        # Disarm
+        self.btn_disarm = ttk.Button(
+            frame,
+            text="Disarm",
+            command=self.controller.request_disarm,
+            state="disabled"
+        )
+        self.btn_disarm.pack(side=tk.LEFT, padx=4)
+
+    def _build_notebook(self):
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+
+        # Home Tab (Canvas)
+        self.home_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.home_tab, text="Home")
+        self._build_home_canvas(self.home_tab)
+
+        # Mission Tab
+        self.mission_tab = MissionTab(self.notebook, self.controller)
+        self.notebook.add(self.mission_tab, text="Mission")
+
+        # Capabilities Tab
+        self.capabilities_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.capabilities_tab, text="Capabilities")
+
+        # Log Tab
+        self.log_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.log_tab, text="Log")
+        self._build_log_tab(self.log_tab)
+
+        # Tab-Change Event
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
+    def _build_home_canvas(self, parent):
+        canvas = tk.Canvas(parent, bg="white")
+        canvas.pack(fill=tk.BOTH, expand=True)
+
+        canvas.create_text(
+            400, 250,
+            text="2D Plot Canvas",
+            fill="gray",
+            font=("Arial", 20)
+        )
+
+        self.canvas = canvas
+
+    def _build_log_tab(self, parent):
+        text = tk.Text(parent, wrap="word", state="disabled", bg="white", fg="black")
+        text.pack(fill=tk.BOTH, expand=True)
+        self.log_text_widget = text
+
+    def _build_statusbar(self):
+        statusbar = ttk.Label(self, textvariable=self.status_var, relief=tk.SUNKEN, anchor="w")
+        statusbar.pack(side=tk.BOTTOM, fill=tk.X)
+
+    # ------------------------------------------------------------
+    # GUI-Update-Methoden (vom Controller aufgerufen)
+    # ------------------------------------------------------------
+    def update_status(self, text):
+        self.status_var.set(text)
+
+    def append_log(self, text):
+        if self.log_text_widget is None:
+            return
+
+        self.log_text_widget.configure(state="normal")
+        self.log_text_widget.insert(tk.END, text + "\n")
+        self.log_text_widget.configure(state="disabled")
+        self.log_text_widget.see(tk.END)
+
+    def update_mission_items(self, item):
+        self.mission_tab.add_mission_item(item)
+
+    def update_telemetry(self, telemetry_dict):
+        """
+        Erwartet ein Dict wie:
+        {
+            "mode": "...",
+            "armed": True/False,
+            "alt": 12.3,
+            "vx": ...,
+            "vy": ...,
+            "vz": ...
+        }
+        """
+        mode = telemetry_dict.get("mode", "UNKNOWN")
+        armed = telemetry_dict.get("armed", False)
+        alt = telemetry_dict.get("alt", 0.0)
+
+        self.status_var.set(
+            f"PX4-HB: {telemetry_dict['px4_hb']} | GUI: {telemetry_dict['gui_spinner']} | "
+            f"Mode: {mode} | Armed: {armed} | Alt: {alt:.1f} m"
+        )
+
+    # ------------------------------------------------------------
+    # State-Update vom SystemStateMachine
+    # ------------------------------------------------------------
+    def update_state(self, state):
+        """
+        Wird vom Test oder vom SystemStateMachine aufgerufen.
+        Aktualisiert Buttons und Tabs über den GUIController.
+        """
+        if hasattr(self.controller, "update_buttons"):
+            self.controller.update_buttons(state)
+
+    # ------------------------------------------------------------
+    # Tab-Wechsel
+    # ------------------------------------------------------------
+    def on_tab_changed(self, event):
+        selected = self.notebook.tab(self.notebook.select(), "text")
+
+        if selected == "Mission":
+            self.controller.main_tab_to_mission_tab()
+        else:
+            self.controller.mission_tab_to_main_tab()
+
