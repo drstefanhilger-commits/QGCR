@@ -1,8 +1,8 @@
 # === PFAD-B FULL FILE: QGCR/states/base_hfsm.py ===
 
-from QGCR.states.base_fsm import BaseFSM
+from QGCR.states.base import Base
 
-class BaseHFSM(BaseFSM):
+class BaseHFSM(Base):
     """
     Gemeinsame Basis für alle High-Level-FSMs (STARTUP, READY, MISSION, AIRBORNE).
     - Setzt model.hfsm_main beim Betreten
@@ -29,6 +29,4 @@ class BaseHFSM(BaseFSM):
         Wird von Kindklassen überschrieben.
         Aktualisiert den MainState im Model.
         """
-        self.model.hfsm_main = self._next_state.name
-        self.model.push_state_update()
         return self._next_state

@@ -1,0 +1,49 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam componentBorderColor #003366
+skinparam componentBackgroundColor #E6EEF3
+skinparam arrowColor #003366
+skinparam rectangleBorderColor #003366
+
+title High-Level System Architecture – Swarm UAV Interception (Version 0.2)
+
+' --- Hauptkomponenten ---
+rectangle "Kontroll-Station (CS)" as CS {
+  component "Long-Range Detection\n(15 km)" as LR
+  component "Track Management\n(RADAR + MAVLink)" as TM
+  component "Mission Planning\n(Erfolgswahrscheinlichkeit)" as MP
+  component "Command & Control\n(Start / Landung / Abfangbereich)" as CC
+}
+
+rectangle "Externe Sensoren (RADAR)" as RADAR {
+  component "Track Generator\n(Z-UAV + A-UAV)" as TG
+}
+
+rectangle "Abfang-UAVs (A-UAV, PX4)" as AUAV {
+  component "PX4 Flight Controller" as PX4
+  component "Mission Execution\n(Missionspfad, Hover)" as ME
+  component "Kamera Z&I\n(400m/200m)" as CAM
+  component "Konsensbildung\n(Zielzuweisung)" as CONS
+}
+
+rectangle "Ziel-UAVs (Z-UAV)" as ZUAV {
+  component "Zielbewegung\n(Extern)" as ZMOVE
+}
+
+' --- Datenflüsse ---
+RADAR --> TM : RADAR Tracks\n(Z-UAV + A-UAV)
+AUAV --> TM : MAVLink Positionen
+TM --> MP : Konsolidierte Tracks
+MP --> CC : Start-/Abfangentscheidung
+CC --> AUAV : MAVLink Commands\n(Start, Landung, Abfangbereich)
+
+ME --> CAM : Kameraaktivierung\nbei Abfangbereich
+CAM --> ME : Kurskorrektur
+AUAV --> CONS : Statusdaten\nfür Zielzuweisung
+CONS --> AUAV : Zielzuweisung
+
+ZUAV --> CAM : Visuelle Z&I\n(Endphase)
+ZUAV --> RADAR : RADAR Echo
+
+@enduml

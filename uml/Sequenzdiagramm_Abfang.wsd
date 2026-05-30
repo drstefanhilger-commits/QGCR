@@ -1,0 +1,63 @@
+@startuml
+title Sequence Diagram - Complete Interception Mission
+
+actor Operator
+participant RADAR as RADAR
+participant "Control Station CS" as CS
+participant "A-UAV (PX4)" as AUAV
+participant "Z-UAV" as ZUAV
+
+== Long range detection ==
+
+RADAR -> CS: Send tracks (Z-UAV + A-UAV)
+AUAV -> CS: Send MAVLink position
+CS -> CS: Fuse tracks (RADAR + MAVLink)
+
+== Mission decision ==
+
+CS -> CS: Compute interception probability
+CS -> Operator: Display probability
+Operator -> CS: Approve mission start
+CS -> AUAV: Start command + initial intercept area
+
+== Mission execution ==
+
+AUAV -> AUAV: Follow mission path
+CS -> AUAV: Update intercept area (optional)
+AUAV -> CS: Send telemetry (MAVLink)
+
+== Intercept area reached ==
+
+AUAV -> CS: Report arrival at intercept area
+AUAV -> AUAV: Hover and hold position
+CS -> AUAV: Confirm hover state
+
+== Z&I preparation ==
+
+CS -> AUAV: Z-UAV approach detected
+AUAV -> AUAV: Align camera towards Z-UAVs
+
+== Target consensus ==
+
+AUAV -> AUAV: Exchange status (target availability)
+AUAV -> AUAV: Consensus on target assignment
+
+== End phase Z&I ==
+
+ZUAV -> AUAV: Visual detection (400m)
+ZUAV -> AUAV: Identification (200m)
+AUAV -> AUAV: Course correction (camera-based)
+
+== Interception ==
+
+AUAV -> ZUAV: Start intercept flight
+AUAV -> CS: Report interception progress
+AUAV -> CS: Interception complete
+
+== Mission end ==
+
+CS -> AUAV: Land command
+AUAV -> CS: Landing confirmed
+CS -> Operator: Mission completed
+
+@enduml

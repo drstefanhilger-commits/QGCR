@@ -1,0 +1,28 @@
+@startuml
+skinparam state {
+  BackgroundColor #E6EEF3
+  BorderColor #003366
+}
+
+[*] --> PreFlight
+
+state "Mission Path" as MP
+state "Intercept Area" as IA
+state "Hover" as HV
+state "Camera Align" as CA
+state "Consensus" as CO
+state "End-Phase Z&I" as ZI
+state "Intercept Flight" as IF
+state "Return" as RT
+
+PreFlight --> MP : Launch Command
+MP --> IA : Enter Intercept Area
+IA --> HV : Hold Position
+HV --> CA : Z-UAV Approaching
+CA --> CO : Camera Ready
+CO --> ZI : Consensus Reached
+ZI --> IF : Identification Complete
+IF --> RT : Interception Complete
+RT --> [*]
+
+@enduml

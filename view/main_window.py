@@ -28,12 +28,6 @@ class MainWindow(ttk.Frame):
         self.rowconfigure(0, weight=1)   # Tabs
         self.rowconfigure(1, weight=0)   # StatusBar
 
-        # # ------------------------------------------------------------
-        # # ButtonBar (oben)
-        # # ------------------------------------------------------------
-        # self.button_bar = ButtonBar(self, controller=self.controller)
-        # self.button_bar.grid(row=0, column=0, sticky="ew")
-
         # ------------------------------------------------------------
         # Notebook (Tabs)
         # ------------------------------------------------------------

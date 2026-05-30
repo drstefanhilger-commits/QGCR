@@ -1,0 +1,45 @@
+@startuml
+actor Operator
+participant RADAR
+participant "Control Station (CS)" as CS
+participant "A-UAV" as AUAV
+participant "Z-UAV" as ZUAV
+
+== Detection ==
+RADAR -> CS: Send Tracks
+AUAV -> CS: MAVLink Telemetry
+CS -> CS: Track Fusion
+
+== Decision ==
+CS -> CS: Compute Probability
+CS -> Operator: Display Probability
+Operator -> CS: Approve Launch
+CS -> AUAV: Launch + Intercept Area
+
+== Execution ==
+AUAV -> AUAV: Follow Mission Path
+CS -> AUAV: Update Intercept Area
+AUAV -> CS: Telemetry
+
+== Intercept Area ==
+AUAV -> CS: Arrived
+AUAV -> AUAV: Hover
+CS -> AUAV: Confirm
+
+== Z&I ==
+CS -> AUAV: Z-UAV Approaching
+AUAV -> AUAV: Camera Align
+AUAV -> AUAV: Consensus
+ZUAV -> AUAV: Visual Detection
+ZUAV -> AUAV: Identification
+AUAV -> AUAV: Course Correction
+
+== Interception ==
+AUAV -> ZUAV: Intercept Flight
+AUAV -> CS: Interception Complete
+
+== End ==
+CS -> AUAV: Land
+AUAV -> CS: Landing Confirmed
+
+@enduml

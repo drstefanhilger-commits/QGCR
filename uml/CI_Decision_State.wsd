@@ -1,0 +1,27 @@
+@startuml
+title Control-Station (CS) Decision Logic State Machine
+
+[*] --> Idle
+
+Idle --> LongRangeDetection : RADAR Tracks available
+LongRangeDetection --> TrackFusion : A-UAV MAVLink\npositions received
+TrackFusion --> ProbabilityCalculation : Consolidated tracks ready
+
+ProbabilityCalculation --> Idle : Probability < Threshold
+ProbabilityCalculation --> MissionStart : Probability >= Threshold
+
+MissionStart --> MissionMonitoring : Send Start Command\n+ Initial Abfangbereich
+
+MissionMonitoring --> MissionMonitoring : Update Abfangbereich\n(Operator or Auto)
+MissionMonitoring --> MissionMonitoring : Receive A-UAV status\n(MAVLink)
+MissionMonitoring --> MissionMonitoring : Detect Z-UAV approach
+
+MissionMonitoring --> MissionEnd : Interception complete
+MissionMonitoring --> MissionAbort : Operator aborts mission
+
+MissionAbort --> Landing : Send Land Command
+MissionEnd --> Landing : Send Land Command
+
+Landing --> Idle : All A-UAVs landed
+
+@enduml
