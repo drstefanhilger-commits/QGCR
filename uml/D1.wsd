@@ -1,0 +1,48 @@
+@startuml
+left to right direction
+skinparam actorStyle awesome
+
+actor Operator as OP
+actor "Control Station (CS)" as CS
+actor "Interceptor UAV (A-UAV)" as AUAV
+actor "Target UAV (Z-UAV)" as ZUAV
+actor "RADAR Sensors" as RADAR
+
+usecase "Long-Range Detection" as UC1
+usecase "Track Management" as UC2
+usecase "Mission Planning" as UC3
+usecase "Launch Interceptor Swarm" as UC4
+usecase "Modify Intercept Area" as UC5
+usecase "Land Swarm" as UC6
+
+usecase "Hover in Intercept Area" as UC7
+usecase "Camera Alignment" as UC8
+usecase "Target Assignment Consensus" as UC9
+usecase "End-Phase Z&I" as UC10
+usecase "Intercept Flight" as UC11
+
+OP --> UC3
+OP --> UC4
+OP --> UC5
+OP --> UC6
+
+CS --> UC1
+CS --> UC2
+CS --> UC3
+CS --> UC4
+CS --> UC5
+CS --> UC6
+
+AUAV --> UC7
+AUAV --> UC8
+AUAV --> UC9
+AUAV --> UC10
+AUAV --> UC11
+
+RADAR --> UC1
+RADAR --> UC2
+
+ZUAV --> UC10
+ZUAV --> UC11
+
+@enduml

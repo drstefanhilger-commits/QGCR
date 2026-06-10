@@ -1,0 +1,48 @@
+@startuml
+title A-UAV Mission State Machine (PX4)
+
+State Preparation {
+  State PreFlight
+  State MissionPathFollowing
+  State AbfangAreaReached
+  State Hover
+}
+State Execution {
+  State CameraAlignment
+  State TargetConsensus
+  State Endphase_ZI
+  State InterceptFlight
+}
+
+State AbortMission {
+  State Abort
+  State ReturnToBase
+  State Landed
+}
+[*] --> PreFlight
+
+Preparation --> Abort : Abort Mission Command (CS)
+Execution --> Abort : Abort Mission Command (CS)
+
+PreFlight --> MissionPathFollowing : Mission Start Command (CS)
+
+MissionPathFollowing --> MissionPathFollowing : Receive updated\nAbfangbereich (CS)
+MissionPathFollowing --> AbfangAreaReached : Enter Abfangbereich
+
+AbfangAreaReached --> Hover : Hold Position
+Hover --> CameraAlignment : Z-UAVs detected (RADAR/CS)
+
+CameraAlignment --> TargetConsensus : Exchange status\nwith other A-UAVs
+TargetConsensus --> TargetConsensus : Consensus not reached
+TargetConsensus --> Endphase_ZI : Consensus reached
+
+Endphase_ZI --> InterceptFlight : Z-UAV identified\n(200m camera ID)
+InterceptFlight --> InterceptFlight : Course correction\n(400m detection)
+InterceptFlight --> [*] : Z-UAV intercepted
+
+
+Abort --> ReturnToBase : CS Command: Abort Mission
+ReturnToBase --> Landed : Touchdown
+Landed --> [*]
+
+@enduml

@@ -1,0 +1,33 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+class ControlStation {
+  +receiveRadarTracks()
+  +receiveMavlink()
+  +computeProbability()
+  +sendLaunchCommand()
+  +updateInterceptArea()
+}
+
+class InterceptorUAV {
+  +followMissionPath()
+  +hover()
+  +alignCamera()
+  +performConsensus()
+  +executeIntercept()
+}
+
+class TargetUAV {
+  +provideRadarEcho()
+}
+
+class RadarSensor {
+  +generateTracks()
+}
+
+ControlStation --> RadarSensor : receives tracks
+ControlStation --> InterceptorUAV : sends commands
+InterceptorUAV --> ControlStation : sends telemetry
+InterceptorUAV --> TargetUAV : intercepts
+RadarSensor --> TargetUAV : detects
+@enduml

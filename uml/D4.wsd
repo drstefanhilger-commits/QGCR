@@ -1,0 +1,26 @@
+@startuml
+skinparam state {
+  BackgroundColor #F0F5FA
+  BorderColor #003366
+}
+
+[*] --> Idle
+
+Idle --> Detection : Radar Tracks Available
+Detection --> Fusion : MAVLink Positions Received
+Fusion --> Probability : Tracks Consolidated
+
+Probability --> Idle : Probability < Threshold
+Probability --> Launch : Probability >= Threshold
+
+Launch --> Monitor : Start Command Sent
+Monitor --> Monitor : Update Intercept Area
+Monitor --> Monitor : Receive Telemetry
+Monitor --> End : Interception Complete
+Monitor --> Abort : Operator Abort
+
+Abort --> Landing
+End --> Landing
+Landing --> Idle
+
+@enduml

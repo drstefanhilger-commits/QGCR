@@ -1,0 +1,62 @@
+@startuml
+left to right direction
+skinparam actorStyle awesome
+skinparam usecaseBorderColor #003366
+skinparam usecaseBackgroundColor #DDE8F0
+skinparam actorBorderColor #003366
+skinparam actorBackgroundColor #E6EEF3
+skinparam shadowing false
+
+' --- Akteure ---
+actor Operator as OP
+actor "Kontroll-Station (CS)" as CS
+actor "Abfang-UAV (A-UAV, PX4)" as AUAV
+actor "Ziel-UAV (Z-UAV)" as ZUAV
+actor "Externe Sensoren (RADAR)" as RADAR
+
+' --- Use Cases CS ---
+usecase "UC1: Long-Range Detection\n(15 km)" as UC1
+usecase "UC2: Track Management\n(RADAR + MAVLink)" as UC2
+usecase "UC3: Mission Planning\n(Erfolgswahrscheinlichkeit)" as UC3
+usecase "UC4: Start Abfang-Schwarm" as UC4
+usecase "UC5: Abfangbereich ändern" as UC5
+usecase "UC6: Landung des Schwarms" as UC6
+
+' --- Use Cases A-UAV ---
+usecase "UC7: Hover im Abfangbereich" as UC7
+usecase "UC8: Kameraausrichtung\nauf Z-UAVs" as UC8
+usecase "UC9: Zielzuweisung\n(Konsensbildung)" as UC9
+usecase "UC10: Endphase Kurskorrektur\n(400m/200m)" as UC10
+usecase "UC11: Abfangflug starten" as UC11
+
+' --- Beziehungen Operator ---
+OP --> UC3
+OP --> UC4
+OP --> UC5
+OP --> UC6
+
+' --- Beziehungen CS ---
+CS --> UC1
+CS --> UC2
+CS --> UC3
+CS --> UC4
+CS --> UC5
+CS --> UC6
+
+' --- Beziehungen A-UAV ---
+AUAV --> UC7
+AUAV --> UC8
+AUAV --> UC9
+AUAV --> UC10
+AUAV --> UC11
+
+' --- Beziehungen Z-UAV ---
+ZUAV --> UC8
+ZUAV --> UC10
+ZUAV --> UC11
+
+' --- Beziehungen RADAR ---
+RADAR --> UC1
+RADAR --> UC2
+
+@enduml
