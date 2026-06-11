@@ -16,7 +16,7 @@ class MainController:
         self.state_map = state_map
 
         # Startzustand
-        self.active_state = MainState.STARTUP
+        self.active_state = MainState.SETUP
         self.active_fsm = self.state_map[self.active_state](model)
 
         # HFSM-State im Model sichtbar machen

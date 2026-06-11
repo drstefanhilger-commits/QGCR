@@ -1,3 +1,5 @@
+# === PFAD-B FULL FILE: QGCR/sim/px4_swarm_starter.py ===
+
 import subprocess
 import os
 import signal
@@ -25,17 +27,22 @@ class PX4SwarmStarter:
     """
 
     def __init__(self, instances, model=None):
-        self.instances = instances
-        self.processes = {}
+        self.instances = instances              # Liste von PX4InstanceConfig
+        self.processes = {}                     # instance_id -> Popen
+        self.stdout_threads = {}                # instance_id -> Thread
+        self.stderr_threads = {}                # instance_id -> Thread
         self.model = model
-        self.running = False   # <--- NEU: Idempotenz-Flag
+        self.running = False                    # Idempotenz-Flag
 
     # ------------------------------------------------------------
     # START
     # ------------------------------------------------------------
     def start_all(self):
+        """
+        Startet alle konfigurierten PX4-Instanzen.
+        Wird ignoriert, wenn bereits running == True.
+        """
 
-        # Idempotenz: Wenn bereits gestartet → ignorieren
         if self.running:
             print("[PX4SwarmStarter] start_all() ignored – already running.")
             return
@@ -73,6 +80,7 @@ class PX4SwarmStarter:
             )
             self.processes[cfg.instance_id] = proc
 
+            # Model-Infos aktualisieren
             if self.model:
                 if not hasattr(self.model, "px4_pids"):
                     self.model.px4_pids = {}
@@ -89,33 +97,53 @@ class PX4SwarmStarter:
             if cfg.verbose:
                 print(f"[PX4SwarmStarter] PX4[{cfg.instance_id}] started (PID={proc.pid}).")
 
+            # Log-Streaming in separaten Threads
             if self.model and hasattr(self.model, "log"):
-                threading.Thread(
+                t_out = threading.Thread(
                     target=self._stream_output,
-                    args=(cfg.instance_id, proc),
+                    args=(cfg.instance_id, proc.stdout, "STDOUT"),
                     daemon=True
-                ).start()
+                )
+                t_err = threading.Thread(
+                    target=self._stream_output,
+                    args=(cfg.instance_id, proc.stderr, "STDERR"),
+                    daemon=True
+                )
+                t_out.start()
+                t_err.start()
+                self.stdout_threads[cfg.instance_id] = t_out
+                self.stderr_threads[cfg.instance_id] = t_err
 
     # ------------------------------------------------------------
     # LOG STREAM
     # ------------------------------------------------------------
-    def _stream_output(self, instance_id, proc):
-        if proc.stdout:
-            for line in proc.stdout:
-                text = line.decode(errors="ignore").rstrip()
-                self.model.log.px4(instance_id, text)
+    def _stream_output(self, instance_id, pipe, stream_name):
+        """
+        Liest kontinuierlich aus pipe und leitet die Zeilen ins Model-Log.
+        """
+        if pipe is None:
+            return
 
-        if proc.stderr:
-            for line in proc.stderr:
+        for line in pipe:
+            try:
                 text = line.decode(errors="ignore").rstrip()
-                self.model.log.px4(instance_id, text)
+            except AttributeError:
+                # falls bereits str
+                text = line.rstrip()
+
+            if self.model and hasattr(self.model, "log"):
+                # Du kannst hier differenzieren nach STDOUT/STDERR, falls gewünscht
+                self.model.log.px4(instance_id, f"[{stream_name}] {text}")
 
     # ------------------------------------------------------------
-    # STOP
+    # STOP (HFSM-gesteuert, normaler Stop)
     # ------------------------------------------------------------
     def stop_all(self):
+        """
+        Normaler Stop, HFSM-gesteuert.
+        Idempotent: wird ignoriert, wenn bereits gestoppt.
+        """
 
-        # Idempotenz: Wenn bereits gestoppt → ignorieren
         if not self.running:
             print("[PX4SwarmStarter] stop_all() ignored – already stopped.")
             return
@@ -158,15 +186,93 @@ class PX4SwarmStarter:
         if hasattr(self.model, "model_name"):
             self.model.model_name = None
 
-        # --- NEU: Gazebo-Prozesse explizit beenden ---
+        # Gazebo-Prozesse explizit beenden
         gazebo_names = ["gzserver", "gzclient", "gz", "ign", "ign-gazebo"]
-
         for name in gazebo_names:
             try:
-                subprocess.run(["pkill", "-9", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["pkill", "-9", name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
                 print(f"[PX4SwarmStarter] killed leftover Gazebo process: {name}")
             except Exception:
                 pass
 
-
         self.processes.clear()
+
+    # ------------------------------------------------------------
+    # CLEANUP (für App-Shutdown / Terminal-Freigabe)
+    # ------------------------------------------------------------
+    def cleanup(self):
+        """
+        Sauberes Beenden aller PX4-Prozesse, Threads und Pipes.
+        Wird typischerweise beim Beenden der Applikation aufgerufen.
+        """
+
+        # 1) Prozesse terminieren
+        for instance_id, proc in list(self.processes.items()):
+            try:
+                pgid = os.getpgid(proc.pid)
+            except Exception:
+                pgid = None
+
+            if pgid is not None:
+                try:
+                    os.killpg(pgid, signal.SIGTERM)
+                except Exception:
+                    pass
+
+            try:
+                proc.wait(timeout=3.0)
+            except Exception:
+                if pgid is not None:
+                    try:
+                        os.killpg(pgid, signal.SIGKILL)
+                    except Exception:
+                        pass
+
+            # Pipes schließen
+            try:
+                if proc.stdout:
+                    proc.stdout.close()
+                if proc.stderr:
+                    proc.stderr.close()
+            except Exception:
+                pass
+
+            print(f"[PX4SwarmStarter] cleanup: PX4[{instance_id}] terminated.")
+
+        # 2) Threads joinen
+        for instance_id, t in list(self.stdout_threads.items()):
+            try:
+                t.join(timeout=1.0)
+            except Exception:
+                pass
+
+        for instance_id, t in list(self.stderr_threads.items()):
+            try:
+                t.join(timeout=1.0)
+            except Exception:
+                pass
+
+        # 3) Gazebo-Reste killen
+        gazebo_names = ["gzserver", "gzclient", "gz", "ign", "ign-gazebo"]
+        for name in gazebo_names:
+            try:
+                subprocess.run(
+                    ["pkill", "-9", name],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
+
+        # 4) interne Strukturen leeren
+        self.processes.clear()
+        self.stdout_threads.clear()
+        self.stderr_threads.clear()
+
+        self.running = False
+
+        print("[PX4SwarmStarter] cleanup complete.")

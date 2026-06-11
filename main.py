@@ -26,7 +26,7 @@ from QGCR.microservices.reset_microservice import ResetMicroService
 from QGCR.logging.log_router import LogRouter
 from QGCR.core.startup_cleanup import StartupCleanup
 
-from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
+from QGCR.sim.px4_swarm_starter import PX4InstanceConfig, PX4SwarmStarter
 
 
 class Application:
@@ -55,8 +55,7 @@ class Application:
         self.model = Model(queue_registry=self.queue_registry)
 
         # ------------------------------------------------------------
-        # PX4-Fahrzeugkonfiguration(en) ins Model legen
-        # (StartupHFSM liest model.vehicle_configs)
+        # PX4-Fahrzeugkonfiguration(en)
         # ------------------------------------------------------------
         self.model.vehicle_configs = [
             PX4InstanceConfig(
@@ -65,6 +64,14 @@ class Application:
                 instance_id=1,
             )
         ]
+
+        # ------------------------------------------------------------
+        # Swarm Starter
+        # ------------------------------------------------------------
+        self.model.swarm_starter = PX4SwarmStarter(
+            instances=self.model.vehicle_configs,
+            model=self.model
+        )
 
         # ------------------------------------------------------------
         # Logging
@@ -105,6 +112,7 @@ class Application:
         # ------------------------------------------------------------
         self.window = MainWindow(
             parent=self.root,
+            model=self.model,
             controller=self.gui_controller,
             queue_registry=self.queue_registry
         )
@@ -131,6 +139,9 @@ class Application:
         )
         self._conn_thread.start()
 
+    # ------------------------------------------------------------
+    # UPDATE LOOP
+    # ------------------------------------------------------------
     def _update_loop(self):
         while not self._stop:
             try:
@@ -143,6 +154,9 @@ class Application:
 
             time.sleep(0.05)
 
+    # ------------------------------------------------------------
+    # CONNECT LOOP
+    # ------------------------------------------------------------
     def _connect_loop(self):
         try:
             print("Binding MAVLink UDP on 0.0.0.0:14550 (waiting for PX4 heartbeat)...")
@@ -170,12 +184,25 @@ class Application:
             f"compid={self.connection.master.target_component})"
         )
 
+    # ------------------------------------------------------------
+    # RUN
+    # ------------------------------------------------------------
     def run(self):
         self.window.mainloop()
 
+    # ------------------------------------------------------------
+    # STOP (deterministisch)
+    # ------------------------------------------------------------
     def stop(self):
         self._stop = True
 
+        # 1) PX4 + Gazebo + Threads + Pipes
+        try:
+            self.model.swarm_starter.cleanup()
+        except Exception:
+            pass
+
+        # 2) MAVLink-Verbindung schließen
         try:
             self.connection.close()
         except Exception:
@@ -184,6 +211,16 @@ class Application:
         time.sleep(0.1)
 
 
+# ------------------------------------------------------------
+# MAIN ENTRY
+# ------------------------------------------------------------
 if __name__ == "__main__":
     app = Application()
-    app.root.mainloop()
+    try:
+        app.run()
+    finally:
+        # HARTE GARANTIE: Terminal wird freigegeben
+        try:
+            app.stop()
+        except Exception:
+            pass

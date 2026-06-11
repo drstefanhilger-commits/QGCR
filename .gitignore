@@ -1,0 +1,55 @@
+# === QGCR .gitignore ===
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Build / runtime artifacts
+build/
+dist/
+*.egg-info/
+
+# QGCR runtime state
+QGCR_state.json
+QGCR_cache/
+QGCR_temp/
+
+# Mission files generated at runtime
+*.plan.autosave
+
+# Tkinter window geometry cache
+*.tkgeometry
+
+# PX4 SITL runtime folders (but NOT PX4 source!)
+rootfs/
+px4_instances/
+px4_logs/
+
+# Coverage
+.coverage
+coverage/
+coverage.xml
+
+# Test artifacts
+pytest_cache/

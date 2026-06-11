@@ -2,6 +2,7 @@
 
 import time
 from collections import deque
+from QGCR.model.scenario_config import ScenarioConfig
 
 
 # ------------------------------------------------------------
@@ -72,6 +73,10 @@ class Model:
         # HFSM-Event-Queue
         self.hfsm_events = deque()
 
+        # Szenario-Konfiguration
+        self.scenario_config = ScenarioConfig()
+        self.scenario = self.scenario_config   # Alias für HFSM + GUI [[spaeter saeubern]]
+        
         # ------------------------------------------------------------
         # Modell-Informationen (NEU)
         # ------------------------------------------------------------

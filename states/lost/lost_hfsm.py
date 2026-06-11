@@ -1,10 +1,10 @@
 # === PFAD-B FULL FILE: lost_hfsm.py ===
 
-from QGCR.states.base_fsm import BaseFSM
+from QGCR.states.base_hfsm import BaseHFSM
 from QGCR.states.main_state import MainState
 
 
-class LostHFSM(BaseFSM):
+class LostHFSM(BaseHFSM):
     """
     Minimaler LOST-HFSM.
     Bleibt im LOST-State, bis spätere Logik implementiert wird.

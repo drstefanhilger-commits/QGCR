@@ -8,6 +8,7 @@ from QGCR.view.status_bar import StatusBar
 from QGCR.view.home_tab import HomeTab
 from QGCR.view.mission_tab import MissionTab
 from QGCR.view.log_tab import LogTab
+from QGCR.view.tabs.setup_tab import SetupTab
 
 
 class MainWindow(ttk.Frame):
@@ -16,9 +17,10 @@ class MainWindow(ttk.Frame):
     Die Application() erzeugt das Tk-Root und bettet MainWindow ein.
     """
 
-    def __init__(self, parent, controller, queue_registry=None):
+    def __init__(self, parent, model, controller, queue_registry=None):
         super().__init__(parent)
 
+        self.model = model
         self.controller = controller
         self.queue_registry = queue_registry
 
@@ -38,12 +40,14 @@ class MainWindow(ttk.Frame):
         self.home_tab = HomeTab(self.notebook, controller=self.controller)
         self.mission_tab = MissionTab(self.notebook, controller=self.controller)
         self.log_tab = LogTab(self.notebook)
+        self.setup_tab = SetupTab(self.notebook, self.model, self.controller)
 
         # Tabs hinzufügen
         self.notebook.add(self.home_tab, text="Home")
         self.notebook.add(self.mission_tab, text="Mission")
         self.notebook.add(self.log_tab, text="Log")
-
+        self.notebook.add(self.setup_tab, text="Setup")
+    
         # ------------------------------------------------------------
         # StatusBar (unten)
         # ------------------------------------------------------------

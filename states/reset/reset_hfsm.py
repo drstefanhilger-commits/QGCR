@@ -19,7 +19,15 @@ class ResetHFSM(BaseHFSM):
         self.model.hfsm_main = "RESET"
         self.model.hfsm_sub = "CLEANUP"
         self.model.push_state_update()
+        # KORREKTES CLEANUP
+        try:
+            self.model.swarm_starter.cleanup()
+        except Exception as e:
+            self.model.log.qgcr(f"[ResetHFSM] Cleanup error: {e}")
 
+        # Danach zurück in SETUP
+        self._next_state = MainState.SETUP
+            
         # Wenn bereits ein Reset läuft, nichts mehr tun
         if getattr(self.model, "reset_in_progress", False):
             self.model.log.qgcr("[ResetHFSM] reset_in_progress=True → skip duplicate RESET")

@@ -4,6 +4,7 @@ from enum import Enum, auto
 
 
 class MainState(Enum):
+    SETUP = auto()
     STARTUP = auto()
     READY = auto()
     MISSION = auto()

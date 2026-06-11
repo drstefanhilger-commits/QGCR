@@ -226,3 +226,17 @@ class GUIController:
 
         if self.root:
             self.root.after(500, self.gui_tick)
+
+    def push_event(self, event_name: str):
+        """
+        HFSM-Event in die HFSM-Queue pushen.
+        Wird z.B. vom SetupTab genutzt (AIM).
+        """
+        try:
+            # q = self.queue_registry.require("hfsm")
+            # q.push(event_name)
+            # print(f"[GUIController] HFSM-Event gesendet: {event_name}")
+            self.model.hfsm_events.append(event_name)
+            print("[GUIController] HFSM-Event:", event_name)
+        except Exception as e:
+            print(f"[GUIController] push_event Fehler: {e}")

@@ -1,62 +1,134 @@
 # === PFAD-B FULL FILE: QGCR/states/startup/startup_hfsm.py ===
 
-from QGCR.states.main_state import MainState
+import time
 from QGCR.states.base_hfsm import BaseHFSM
-from QGCR.sim.px4_swarm_starter import PX4SwarmStarter
+from QGCR.states.main_state import MainState
+from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
 
 
 class StartupHFSM(BaseHFSM):
+    """
+    Startup-HFSM:
+    - Liest Setup-Daten aus model.scenario
+    - Baut PX4InstanceConfig-Liste
+    - Startet PX4 über swarm_starter
+    - Wartet auf Heartbeat / ParamSync / MissionLoad
+    - Übergang nach READY
+    """
 
     def __init__(self, model):
         super().__init__(model, MainState.STARTUP)
         self._next_state = MainState.STARTUP
-        self.startup_controller = None
-        self._initialized = False
+        self._phase = "INIT"
+        self._start_time = 0
 
+    # ------------------------------------------------------------
+    # ENTER
+    # ------------------------------------------------------------
     def _on_enter(self):
-        self.model.log.qgcr("[StartupHFSM] entering STARTUP")
         self.model.hfsm_main = "STARTUP"
         self.model.hfsm_sub = "INIT"
         self.model.push_state_update()
 
-        # Wenn bereits ein Starter existiert → nicht neu starten
-        if getattr(self.model, "startup_controller", None) is not None:
-            self.model.log.qgcr(
-                "[StartupHFSM] existing startup_controller found → reusing (no new start_all())"
-            )
-            self.startup_controller = self.model.startup_controller
-            self._initialized = True
+        self._phase = "INIT"
+        self._start_time = time.time()
+
+        # --------------------------------------------------------
+        # 1) Setup-Daten aus dem Model lesen
+        # --------------------------------------------------------
+        scenario = getattr(self.model, "scenario", None)
+
+        if scenario is None or not hasattr(scenario, "uavs"):
+            print("[StartupHFSM] WARNUNG: Keine Scenario-Daten gefunden.")
+            self._next_state = MainState.READY
             return
 
-        try:
-            vehicle_configs = getattr(self.model, "vehicle_configs", [])
-            self.startup_controller = PX4SwarmStarter(
-                vehicle_configs,
-                model=self.model,
+        # --------------------------------------------------------
+        # 2) PX4InstanceConfig-Liste erzeugen
+        # --------------------------------------------------------
+        instance_configs = []
+        instance_id = 1
+
+        for uav in scenario.uavs:
+            cfg = PX4InstanceConfig(
+                px4_dir=uav["px4_dir"],
+                model_name=uav["uav_type"],
+                instance_id=instance_id,
+                verbose=True
             )
-            self.startup_controller.start_all()
-            self.model.startup_controller = self.startup_controller
-            self.model.log.qgcr("[StartupHFSM] PX4SwarmStarter started")
-        except Exception as e:
-            self.model.log.qgcr(f"[StartupHFSM] PX4 start error: {e}")
+            instance_configs.append(cfg)
+            instance_id += 1
 
-        self._initialized = True
+        # --------------------------------------------------------
+        # 3) SwarmStarter konfigurieren
+        # --------------------------------------------------------
+        self.model.vehicle_configs = instance_configs
+        self.model.swarm_starter.instances = instance_configs
 
+        # --------------------------------------------------------
+        # 4) PX4 starten
+        # --------------------------------------------------------
+        print("[StartupHFSM] Starte PX4-Instanzen…")
+        self.model.swarm_starter.start_all()
+
+        self._phase = "WAIT_HEARTBEAT"
+        self.model.hfsm_sub = "WAIT_HEARTBEAT"
+        self.model.push_state_update()
+
+    # ------------------------------------------------------------
+    # DURING
+    # ------------------------------------------------------------
     def _on_during(self):
-        if not self._initialized:
-            self._next_state = MainState.STARTUP
+
+        # RESET → sofort zurück nach SETUP
+        if self._pop_event("RESET"):
+            self._next_state = MainState.SETUP
             return
 
-        if not self.model.connection_ready():
-            self._next_state = MainState.STARTUP
+        # --------------------------------------------------------
+        # PHASE 1: Heartbeat abwarten
+        # --------------------------------------------------------
+        if self._phase == "WAIT_HEARTBEAT":
+            if getattr(self.model, "px4_connected", False):
+                print("[StartupHFSM] PX4 Heartbeat empfangen.")
+                self._phase = "PARAMSYNC"
+                self.model.hfsm_sub = "PARAMSYNC"
+                self.model.push_state_update()
             return
 
-        if not self.model.heartbeat_ok():
-            self._next_state = MainState.STARTUP
+        # --------------------------------------------------------
+        # PHASE 2: ParamSync (Platzhalter)
+        # --------------------------------------------------------
+        if self._phase == "PARAMSYNC":
+            # Später: echtes ParamSync-Event
+            time.sleep(0.3)
+            print("[StartupHFSM] ParamSync OK.")
+            self._phase = "MISSION"
+            self.model.hfsm_sub = "MISSION"
+            self.model.push_state_update()
             return
 
-        self.model.log.qgcr("[StartupHFSM] system ready → READY")
-        self._next_state = MainState.READY
+        # --------------------------------------------------------
+        # PHASE 3: MissionLoad (Platzhalter)
+        # --------------------------------------------------------
+        if self._phase == "MISSION":
+            # Später: Missionsdatei pro UAV laden
+            time.sleep(0.3)
+            print("[StartupHFSM] MissionLoad OK.")
+            self._phase = "DONE"
+            self.model.hfsm_sub = "DONE"
+            self.model.push_state_update()
+            return
 
+        # --------------------------------------------------------
+        # PHASE 4: DONE → READY
+        # --------------------------------------------------------
+        if self._phase == "DONE":
+            self._next_state = MainState.READY
+            return
+
+    # ------------------------------------------------------------
+    # EXIT
+    # ------------------------------------------------------------
     def _on_exit(self):
         return self._next_state

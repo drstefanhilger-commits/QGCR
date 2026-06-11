@@ -1,0 +1,20 @@
+# === QGCR .gitattributes ===
+
+# Normalize line endings
+*.py text eol=lf
+*.sh text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
+
+# Treat binary files correctly
+*.png binary
+*.jpg binary
+*.gif binary
+*.plan binary
+
+# Improve diffs
+*.md diff=markdown
+*.py diff=python
+
+# Optional: ignore test artifacts in archives
+tests/ export-ignore

@@ -75,3 +75,22 @@ class BaseHFSM(Base):
     # ------------------------------------------------------------
     def _on_exit(self):
         return self._next_state
+
+    # ------------------------------------------------------------
+    # Event-Popper (zentral)
+    # ------------------------------------------------------------
+    def _pop_event(self, name):
+        """
+        Holt ein Event aus model.hfsm_events.
+        Gibt True zurück, wenn das Event gefunden wurde.
+        """
+        if not self.model.hfsm_events:
+            return False
+
+        ev = self.model.hfsm_events[0]  # Peek
+
+        if ev == name:
+            self.model.hfsm_events.popleft()
+            return True
+
+        return False
