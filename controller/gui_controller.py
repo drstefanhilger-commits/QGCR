@@ -19,6 +19,7 @@ class GUIController:
 
     # Erlaubte Button-Events (Schutz gegen Tippfehler)
     VALID_BUTTON_EVENTS = {
+        "ARM",
         "TAKEOFF",
         "LAND",
         "MISSION_START",
@@ -26,8 +27,8 @@ class GUIController:
         "MISSION_DOWNLOAD",
         "MISSION_VALIDATE",
         "MISSION_STOP",
-        "RESET",            # <--- NEU
-        "STOP",             # <--- optional, falls du STOP global willst
+        "RESET",       
+        "STOP",        
     }
 
     def __init__(self, model, state_machine, main_window, queue_registry):

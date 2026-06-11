@@ -1,4 +1,4 @@
-# === PFAD-B FULL FILE: QGCR/view/mission_tab.py ===
+# === PFAD-B FULL FILE: QGCR/view/tabs/mission_tab.py ===
 
 import tkinter as tk
 from tkinter import ttk

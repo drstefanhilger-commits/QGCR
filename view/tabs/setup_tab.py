@@ -44,7 +44,7 @@ class SetupTab(ttk.Frame):
             row=1, column=0, sticky="w", pady=5
         )
 
-        self.global_px4_dir = tk.StringVar(value="")
+        self.global_px4_dir = tk.StringVar(value="/home/stefan/PX4_SITL/30Degrees")
         ttk.Entry(self, textvariable=self.global_px4_dir, width=40).grid(
             row=1, column=1, columnspan=4, sticky="w"
         )
@@ -107,7 +107,8 @@ class SetupTab(ttk.Frame):
         y_var = tk.DoubleVar(value=0.0)
         z_var = tk.DoubleVar(value=0.0)
         yaw_var = tk.DoubleVar(value=0.0)
-        mission_var = tk.StringVar(value="")
+        mission_var = tk.StringVar(value="/home/stefan/PX4_SITL/missions/27/Zurich.plan")
+
 
         # Widgets erzeugen
         type_box = ttk.Combobox(self, values=self.UAV_TYPES, textvariable=uav_type_var, width=18)

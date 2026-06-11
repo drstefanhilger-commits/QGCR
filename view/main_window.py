@@ -5,9 +5,9 @@ from tkinter import ttk
 
 # from QGCR.view.button_bar import ButtonBar
 from QGCR.view.status_bar import StatusBar
-from QGCR.view.home_tab import HomeTab
-from QGCR.view.mission_tab import MissionTab
-from QGCR.view.log_tab import LogTab
+from QGCR.view.tabs.home_tab import HomeTab
+from QGCR.view.tabs.mission_tab import MissionTab
+from QGCR.view.tabs.log_tab import LogTab
 from QGCR.view.tabs.setup_tab import SetupTab
 
 

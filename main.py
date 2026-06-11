@@ -17,11 +17,15 @@ from QGCR.controller.microservice_controller import MicroServiceController
 from QGCR.core.queue_registry import QueueRegistry
 from QGCR.states.main_state_map import MAIN_STATE_MAP
 
-from QGCR.communication.microservices.mission_microservice import MissionMicroService
-from QGCR.microservices.upload_ms import UploadMicroService
-from QGCR.microservices.home_ms import HomeMicroService
-from QGCR.microservices.takeoff_ms import TakeoffMicroService
-from QGCR.microservices.reset_microservice import ResetMicroService
+from QGCR.communication.microservices.microservice_factory import MicroServiceFactory
+
+# from QGCR.communication.microservices.mission_microservice import MissionMicroService
+# from QGCR.communication.microservices.mission_download_microservice import MissionDownloadMicroService
+# from QGCR.communication.microservices.upload_microservice import UploadMicroService
+# from QGCR.communication.microservices.home_microservice import HomeMicroService
+# from QGCR.communication.microservices.parameter_sync_microservice import ParameterSyncMicroService
+# from QGCR.communication.microservices.reset_microservice import ResetMicroService
+# from QGCR.communication.microservices.takeoff_microservice import TakeoffMicroService
 
 from QGCR.logging.log_router import LogRouter
 from QGCR.core.startup_cleanup import StartupCleanup
@@ -87,14 +91,6 @@ class Application:
         self.model.connection = self.connection
 
         # ------------------------------------------------------------
-        # MicroServices
-        # ------------------------------------------------------------
-        self.model.upload = UploadMicroService(self.model, self.connection)
-        self.model.home = HomeMicroService(self.model, self.connection)
-        self.model.takeoff = TakeoffMicroService(self.model, self.connection)
-        self.model.reset = ResetMicroService(self.model)
-
-        # ------------------------------------------------------------
         # Controller
         # ------------------------------------------------------------
         self.ms_controller = MicroServiceController(self.model)
@@ -106,6 +102,11 @@ class Application:
             queue_registry=self.queue_registry
         )
         self.gui_controller.root = self.root
+
+        # ------------------------------------------------------------
+        # MicroServices factory (erstellt alle MicroServices deterministisch, sobald PX4 verbunden ist)
+        # ------------------------------------------------------------
+        self.ms_factory = MicroServiceFactory(self.model, self.connection)
 
         # ------------------------------------------------------------
         # MainWindow einbetten
@@ -173,16 +174,55 @@ class Application:
         ):
             time.sleep(0.05)
 
-        self.model.mission = MissionMicroService(
-            self.connection.master,
-            self.connection.master.target_system,
-            self.connection.master.target_component
-        )
+        # ⭐ Jetzt sauber und zentral:
+        self.ms_factory.initialize()
 
-        print(
-            f"MissionMicroService initialisiert (sysid={self.connection.master.target_system}, "
-            f"compid={self.connection.master.target_component})"
-        )
+
+        # try:
+        #     print("Binding MAVLink UDP on 0.0.0.0:14550 (waiting for PX4 heartbeat)...")
+        #     self.connection.connect()
+        #     print("UDP bind OK. Waiting for PX4 heartbeat...")
+        # except Exception as e:
+        #     print("Connection error:", e)
+        #     return
+
+        # while (
+        #     self.connection.master is None
+        #     or getattr(self.connection.master, "target_system", 0) == 0
+        #     or not getattr(self.model, "px4_connected", False)
+        # ):
+        #     time.sleep(0.05)
+
+        # master = self.connection.master
+        # ts = master.target_system
+        # tc = master.target_component
+
+        # # ------------------------------------------------------------
+        # # MicroServices ERST JETZT erzeugen (PX4 ist verbunden)
+        # # ------------------------------------------------------------
+
+        # # Mission (klassisch)
+        # self.model.mission = MissionMicroService(master, ts, tc)
+
+        # # Upload (FSM, model + connection)
+        # self.model.upload = UploadMicroService(self.model, self.connection)
+
+        # # Download (connection, model)
+        # self.model.download = MissionDownloadMicroService(self.connection, self.model)
+
+        # # Home (master, ts, tc)
+        # self.model.home = HomeMicroService(master, ts, tc)
+
+        # # Takeoff (alter FSM, model + connection)
+        # self.model.takeoff = TakeoffMicroService(self.model, self.connection)
+
+        # # Reset (nur model, holt sich alles aus model.connection)
+        # self.model.reset = ResetMicroService(self.model)
+
+        # # ParamSync (master, ts, tc)
+        # self.model.param_sync = ParameterSyncMicroService(master, ts, tc)
+
+        # print(f"MicroServices initialisiert (sysid={ts}, compid={tc})")
 
     # ------------------------------------------------------------
     # RUN
@@ -196,13 +236,11 @@ class Application:
     def stop(self):
         self._stop = True
 
-        # 1) PX4 + Gazebo + Threads + Pipes
         try:
             self.model.swarm_starter.cleanup()
         except Exception:
             pass
 
-        # 2) MAVLink-Verbindung schließen
         try:
             self.connection.close()
         except Exception:
@@ -219,7 +257,6 @@ if __name__ == "__main__":
     try:
         app.run()
     finally:
-        # HARTE GARANTIE: Terminal wird freigegeben
         try:
             app.stop()
         except Exception:

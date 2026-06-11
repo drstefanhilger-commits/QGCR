@@ -14,9 +14,9 @@ class Dispatcher:
 
         # Liste der MicroServices, die Messages erhalten sollen
         targets = [
-            getattr(self.model, "mission_ms", None),
-            getattr(self.model, "upload_ms", None),
-            getattr(self.model, "home_ms", None),
+            getattr(self.model, "mission", None),
+            getattr(self.model, "upload", None),
+            getattr(self.model, "home", None),
             getattr(self.model, "takeoff", None),
             getattr(self.model, "param_sync", None),
         ]

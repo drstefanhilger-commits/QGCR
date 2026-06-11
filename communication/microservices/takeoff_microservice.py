@@ -1,200 +1,268 @@
-# === PFAD-B FULL FILE: QGCR/communication/microservices/takeoff_microservice.py ===
+# === PFAD-B FULL FILE: QGCR/microservices/takeoff_microservice.py ===
 
 import time
 from pymavlink import mavutil
 
 
 class TakeoffMicroService:
-    """
-    Event-getriebener, nicht-blockierender Takeoff-Ablauf.
-    """
-
     STATE_IDLE = "IDLE"
     STATE_ARMING = "ARMING"
-    STATE_WAIT_ARMED = "WAIT_ARMED"
-    STATE_SET_MODE = "SET_MODE"
-    STATE_WAIT_MODE = "WAIT_MODE"
-    STATE_SEND_TAKEOFF = "SEND_TAKEOFF"
-    STATE_WAIT_CLIMB = "WAIT_CLIMB"
+    STATE_MODE = "MODE"
+    STATE_TAKEOFF = "TAKEOFF"
     STATE_DONE = "DONE"
     STATE_ERROR = "ERROR"
 
-    def __init__(
-        self,
-        connection,
-        model,
-        target_altitude=10.0,
-        arm_timeout=5.0,
-        mode_timeout=5.0,
-        takeoff_timeout=5.0,
-        climb_timeout=20.0,
-    ):
-        self.conn = connection
+    TIMEOUT = 5.0
+
+    @property
+    def active(self):
+        return self.state not in (
+            self.STATE_IDLE,
+            self.STATE_DONE,
+            self.STATE_ERROR
+        )
+
+    """
+    MicroService für ARM + TAKEOFF.
+    FSM-Zustände:
+
+        IDLE
+        SEND_ARM
+        WAIT_ARM_ACK
+        SEND_TAKEOFF
+        WAIT_TAKEOFF_ACK
+        DONE
+        ERROR
+
+    Eigenschaften:
+    - Non-blocking
+    - Deterministisch
+    - Tick() wird vom MicroServiceController aufgerufen
+    - on_message() wird vom Dispatcher aufgerufen
+    """
+    def __init__(self, model, connection):
         self.model = model
+        self.connection = connection
 
-        self.target_altitude = float(target_altitude)
+        # FSM
+        self.state = "IDLE"
+        self.start_time = 0.0
 
-        self.arm_timeout = float(arm_timeout)
-        self.mode_timeout = float(mode_timeout)
-        self.takeoff_timeout = float(takeoff_timeout)
-        self.climb_timeout = float(climb_timeout)
+        # Zielhöhe
+        self.alt = 10.0
 
-        self.started = False
+        # Flags
         self.done = False
         self.error = None
 
-        self._state = self.STATE_IDLE
-        self._state_enter_time = 0.0
-
-        self._armed = False
-        self._last_mode = None
-        self._last_relative_alt = None
-
     # ------------------------------------------------------------
-    # Event-Callbacks
+    # Public API
     # ------------------------------------------------------------
-    def on_heartbeat(self, msg):
-        try:
-            self._armed = (msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED) != 0
-        except Exception:
-            self._armed = False
+    def start(self, alt=10.0):
+        """
+        Startet ARM + TAKEOFF Sequenz.
+        """
+        # Bereits aktiv? → Start ignorieren
+        if self.active:
+            print("[TakeoffMS] Start ignoriert: bereits aktiv")
+            return
+            
+        # Nur starten, wenn PX4 verbunden ist und target_system gesetzt wurde
+        if not getattr(self.model, "px4_connected", False):
+            print("[TakeoffMS] Start abgebrochen: PX4 nicht verbunden")
+            self.state = "ERROR"
+            self.error = "PX4 not connected"
+            self.done = True
+            return
 
-        try:
-            if hasattr(self.model, "px4_mode"):
-                self._last_mode = self.model.px4_mode
-        except Exception:
-            pass
+        if (
+            self.connection.master is None
+            or self.connection.master.target_system == 0
+        ):
+            print("[TakeoffMS] Start abgebrochen: target_system == 0 (noch kein Heartbeat?)")
+            self.state = "ERROR"
+            self.error = "target_system not set"
+            self.done = True
+            return
 
-    def on_global_position_int(self, msg):
-        try:
-            self._last_relative_alt = msg.relative_alt / 1000.0
-        except Exception:
-            self._last_relative_alt = None
+        self.alt = alt
 
-    # ------------------------------------------------------------
-    # FSM API
-    # ------------------------------------------------------------
-    def start(self):
-        self.started = True
+        self.state = "SEND_ARM"
+        self.start_time = time.time()
+
         self.done = False
         self.error = None
-        self._transition(self.STATE_ARMING)
 
+        print(f"[TakeoffMS] Start → Zielhöhe {alt:.1f} m")
+
+    # ------------------------------------------------------------
+    # FSM Tick
+    # ------------------------------------------------------------
     def tick(self):
-        if not self.started or self.done or self.error:
+        """
+        Wird vom MicroServiceController aufgerufen.
+        """
+        if self.state == "IDLE":
             return
 
         now = time.time()
 
-        if self._state == self.STATE_ARMING:
-            self._do_state_arming(now)
-
-        elif self._state == self.STATE_WAIT_ARMED:
-            self._do_state_wait_armed(now)
-
-        elif self._state == self.STATE_SET_MODE:
-            self._do_state_set_mode(now)
-
-        elif self._state == self.STATE_WAIT_MODE:
-            self._do_state_wait_mode(now)
-
-        elif self._state == self.STATE_SEND_TAKEOFF:
-            self._do_state_send_takeoff(now)
-
-        elif self._state == self.STATE_WAIT_CLIMB:
-            self._do_state_wait_climb(now)
-
-    # ------------------------------------------------------------
-    # State helpers
-    # ------------------------------------------------------------
-    def _transition(self, new_state):
-        self._state = new_state
-        self._state_enter_time = time.time()
-
-    def _timeout(self, now, limit):
-        return (now - self._state_enter_time) >= limit
-
-    # ------------------------------------------------------------
-    # States
-    # ------------------------------------------------------------
-    def _do_state_arming(self, now):
-        try:
-            self._send_arm()
-        except Exception as e:
-            self.error = f"ARM send failed: {e}"
-            self._transition(self.STATE_ERROR)
-            return
-
-        self._transition(self.STATE_WAIT_ARMED)
-
-    def _do_state_wait_armed(self, now):
-        if self._armed:
-            self._transition(self.STATE_SET_MODE)
-            return
-
-        if self._timeout(now, self.arm_timeout):
-            self.error = "ARM timeout"
-            self._transition(self.STATE_ERROR)
-
-    def _do_state_set_mode(self, now):
-        try:
-            self._set_mode_takeoff()
-        except Exception as e:
-            self.error = f"Set mode failed: {e}"
-            self._transition(self.STATE_ERROR)
-            return
-
-        self._transition(self.STATE_WAIT_MODE)
-
-    def _do_state_wait_mode(self, now):
-        if self._last_mode and "TAKEOFF" in str(self._last_mode).upper():
-            self._transition(self.STATE_SEND_TAKEOFF)
-            return
-
-        if self._timeout(now, self.mode_timeout):
-            self._transition(self.STATE_SEND_TAKEOFF)
-
-    def _do_state_send_takeoff(self, now):
-        try:
-            self._send_takeoff(self.target_altitude)
-        except Exception as e:
-            self.error = f"TAKEOFF send failed: {e}"
-            self._transition(self.STATE_ERROR)
-            return
-
-        self._transition(self.STATE_WAIT_CLIMB)
-
-    def _do_state_wait_climb(self, now):
-        if self._last_relative_alt is not None:
-            if self._last_relative_alt >= max(0.5, 0.8 * self.target_altitude):
+        # Heartbeat verloren während aktiver Sequenz?
+        if self.state not in {"IDLE", "DONE", "ERROR"}:
+            if not getattr(self.model, "px4_connected", True):
+                print("[TakeoffMS] ERROR: PX4-Verbindung verloren")
+                self.state = "ERROR"
+                self.error = "PX4 disconnected"
                 self.done = True
-                self._transition(self.STATE_DONE)
                 return
 
-        if self._timeout(now, self.climb_timeout):
-            self.error = "Climb timeout"
-            self._transition(self.STATE_ERROR)
+        # Timeout nur für aktive Zustände, nicht für ERROR/DONE
+        if self.state in {
+            "SEND_ARM",
+            "WAIT_ARM_ACK",
+            "SEND_TAKEOFF",
+            "WAIT_TAKEOFF_ACK",
+        }:
+            if now - self.start_time > self.TIMEOUT:
+                self.state = "ERROR"
+                self.error = f"Timeout in state {self.state}"
+                print(f"[TakeoffMS] ERROR: Timeout in {self.state}")
+                self.done = True
+                return
+
+        # --------------------------------------------------------
+        # SEND_ARM
+        # --------------------------------------------------------
+        if self.state == "SEND_ARM":
+            self._send_arm()
+            self.state = "WAIT_ARM_ACK"
+            self.start_time = now
+            return
+
+        # --------------------------------------------------------
+        # WAIT_ARM_ACK
+        # --------------------------------------------------------
+        if self.state == "WAIT_ARM_ACK":
+            # Warten auf COMMAND_ACK (ARM)
+            return
+
+        # --------------------------------------------------------
+        # SEND_TAKEOFF
+        # --------------------------------------------------------
+        if self.state == "SEND_TAKEOFF":
+            self._send_takeoff()
+            self.state = "WAIT_TAKEOFF_ACK"
+            self.start_time = now
+            return
+
+        # --------------------------------------------------------
+        # WAIT_TAKEOFF_ACK
+        # --------------------------------------------------------
+        if self.state == "WAIT_TAKEOFF_ACK":
+            # Warten auf COMMAND_ACK (TAKEOFF)
+            return
+
+        # --------------------------------------------------------
+        # DONE / ERROR
+        # --------------------------------------------------------
+        if self.state == "DONE":
+            self.done = True
+            return
+
+        if self.state == "ERROR":
+            self.done = True
+            return
 
     # ------------------------------------------------------------
-    # MAVLink send
+    # Message Handling
+    # ------------------------------------------------------------
+    def on_message(self, msg_type, msg):
+        """
+        Dispatcher ruft dies auf.
+        """
+        if msg_type != "COMMAND_ACK":
+            return
+
+        print("[TakeoffMS] DEBUG: COMMAND_ACK received:", msg)
+
+        # ARM ACK
+        if self.state == "WAIT_ARM_ACK":
+            if msg.command == mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
+                if msg.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                    print("[TakeoffMS] ARM ACK → OK, sende TAKEOFF")
+                    self.state = "SEND_TAKEOFF"
+                    self.start_time = time.time()
+                else:
+                    print(f"[TakeoffMS] ARM ACK → ERROR ({msg.result})")
+                    self.state = "ERROR"
+                    self.error = f"ARM failed: {msg.result}"
+                    self.done = True
+                return
+
+        # TAKEOFF ACK
+        if self.state == "WAIT_TAKEOFF_ACK":
+            if msg.command == mavutil.mavlink.MAV_CMD_NAV_TAKEOFF:
+                if msg.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                    print("[TakeoffMS] TAKEOFF ACK → DONE")
+                    
+                    # ⭐ HFSM-Event senden
+                    try:
+                        self.model.hfsm_events.append("TAKEOFF_DONE")
+                    except Exception:
+                        print("[TakeoffMS] WARN: TAKEOFF_DONE konnte nicht gesendet werden")
+
+                    self.state = "DONE"
+                    self.done = True
+                else:
+                    print(f"[TakeoffMS] TAKEOFF ACK → ERROR ({msg.result})")
+                    self.state = "ERROR"
+                    self.error = f"TAKEOFF failed: {msg.result}"
+                    self.done = True
+                return
+
+    # ------------------------------------------------------------
+    # SEND COMMANDS
     # ------------------------------------------------------------
     def _send_arm(self):
-        self.conn.master.mav.command_long_send(
-            1, 1,
+        """
+        Sendet ARM Command.
+        """
+        MAV_COMP_ID_AUTOPILOT1 = 1
+
+        self.connection.master.mav.command_long_send(
+            self.connection.master.target_system,
+            MAV_COMP_ID_AUTOPILOT1,
             mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
-            0,
-            1, 0, 0, 0, 0, 0, 0
+            0,      # confirmation
+            1,      # arm
+            0, 0, 0, 0, 0, 0
         )
+        print("[TakeoffMS] MAV_CMD_COMPONENT_ARM_DISARM gesendet")
 
-    def _set_mode_takeoff(self):
-        self.conn.master.set_mode("AUTO.TAKEOFF")
+    def _send_takeoff(self):
+        """
+        Sendet TAKEOFF Command.
+        Nutzt aktuelle Position aus dem Model (falls vorhanden).
+        """
+        lat = self.model.vehicle_lat if self.model.vehicle_lat is not None else 0.0
+        lon = self.model.vehicle_lon if self.model.vehicle_lon is not None else 0.0
+        alt = self.alt
 
-    def _send_takeoff(self, alt):
-        self.conn.master.mav.command_long_send(
-            1, 1,
+        MAV_COMP_ID_AUTOPILOT1 = 1
+        self.connection.master.mav.command_long_send(
+            self.connection.master.target_system,
+            MAV_COMP_ID_AUTOPILOT1,
             mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-            0,
-            0, 0, 0, 0,
-            0, 0,
-            float(alt)
+            0,          # confirmation
+            0, 0, 0,    # params 1-3 unused
+            0,          # yaw
+            lat,
+            lon,
+            alt
         )
+        print(f"[TakeoffMS] MAV_CMD_NAV_TAKEOFF gesendet (lat={lat}, lon={lon}, alt={alt})")
+
+        print("[TakeoffMS] DEBUG: target_system =", self.connection.master.target_system)
+        print("[TakeoffMS] DEBUG: target_component = 1")
+        print("[TakeoffMS] DEBUG: vehicle_lat/lon =", self.model.vehicle_lat, self.model.vehicle_lon)
+

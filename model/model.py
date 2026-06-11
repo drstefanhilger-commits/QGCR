@@ -104,6 +104,7 @@ class Model:
         self.px4_last_heartbeat = 0.0
         self.px4_heartbeat_count = 0
         self._lost_counter = 0
+        self.ready_for_takeoff = False
 
         # Telemetrie
         self.vehicle_lat = None
@@ -134,9 +135,9 @@ class Model:
 
         # Aliase für HFSM (Variante B)
         self.takeoff    = self.services.takeoff
-        self.home_ms    = self.services.home
-        self.mission_ms = self.services.mission
-        self.upload_ms  = self.services.upload
+        self.home       = self.services.home
+        self.mission    = self.services.mission
+        self.upload     = self.services.upload
         self.reset      = self.services.reset 
         
         self._home_status_logged = False

@@ -44,6 +44,11 @@ class HeartbeatMonitor:
             self._last_px4_ts = now
             self._px4_alive = True
 
+            # PX4 Ready-for-Takeoff erkennen
+            system_status = getattr(msg, "system_status", None)
+            # MAV_STATE_STANDBY = 3
+            self.model.ready_for_takeoff = (system_status == mavlink.MAV_STATE_STANDBY)
+
             base_mode = getattr(msg, "base_mode", None)
 
             # Reboot-Erkennung

@@ -1,3 +1,5 @@
+# === PFAD-B FULL FILE: QGCR/view/tabs/log_tab.py ===
+
 import tkinter as tk
 from tkinter import ttk
 
