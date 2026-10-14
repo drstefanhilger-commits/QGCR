@@ -58,6 +58,13 @@ class TestReadyTakeoffFSM(unittest.TestCase):
         self.ms.tick.assert_not_called()
         self.assertIn(("status", "Takeoff aborted"), self.model.gui_items())
 
+    def test_heartbeat_lost_transitions_to_heartbeat_lost(self):
+        self.model.px4_connected = False
+        state = self.fsm.on_update()
+
+        self.assertEqual(state, ReadySubState.READY_HEARTBEAT_LOST)
+        self.ms.tick.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

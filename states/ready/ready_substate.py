@@ -9,3 +9,5 @@ class ReadySubState(Enum):
     READY_STOP = auto()
     READY_MISSION_START = auto()
     READY_RESET = auto()
+    READY_HEARTBEAT_LOST = auto()
+    READY_MISSION = auto()

@@ -30,6 +30,27 @@ class TestReadyIdleFSM(unittest.TestCase):
         state = self.fsm.on_update()
         self.assertEqual(state, ReadySubState.READY_TAKEOFF)
 
+    def test_heartbeat_lost_transitions_to_heartbeat_lost(self):
+        self.model.px4_connected = False
+        state = self.fsm.on_update()
+        self.assertEqual(state, ReadySubState.READY_HEARTBEAT_LOST)
+
+    def test_no_heartbeat_yet_stays_idle(self):
+        self.model.px4_connected = False
+        self.model.px4_heartbeat_count = 0
+        state = self.fsm.on_update()
+        self.assertEqual(state, ReadySubState.READY_IDLE)
+
+    def test_mission_loaded_transitions_to_mission(self):
+        self.model.mission_loaded = True
+        state = self.fsm.on_update()
+        self.assertEqual(state, ReadySubState.READY_MISSION)
+
+    def test_tab_mission_event_transitions_to_mission(self):
+        self.model.hfsm_events.append("GUI_TAB_MISSION")
+        state = self.fsm.on_update()
+        self.assertEqual(state, ReadySubState.READY_MISSION)
+
     def test_unknown_event_stays_idle(self):
         self.model.hfsm_events.append("FOO")
         state = self.fsm.on_update()
