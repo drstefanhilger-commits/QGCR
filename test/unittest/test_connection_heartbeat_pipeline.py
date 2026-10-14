@@ -1,59 +1,50 @@
-# === PFAD-B FULL FILE: test_connection_heartbeat_pipeline.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_connection_heartbeat_pipeline.py ===
 
 import unittest
-from unittest.mock import MagicMock, patch
-import time
+from unittest.mock import MagicMock
 
-from QGCR.model.model import Model
-from QGCR.communication.connection import Connection
-
-
-class DummyDispatcher:
-    def __init__(self):
-        self.subscriptions = {}
-
-    def subscribe(self, fsm, msg_type):
-        self.subscriptions.setdefault(msg_type, []).append(fsm)
-
-    def route_message(self, msg_type, msg):
-        for fsm in self.subscriptions.get(msg_type, []):
-            if hasattr(fsm, "on_message"):
-                fsm.on_message(msg_type, msg)
+from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.test.unittest.fake_mavlink import make_msg, run_connection
 
 
-class HeartbeatMonitor:
-    def __init__(self):
-        self.received = []
-
-    def on_message(self, msg_type, msg):
-        self.received.append((msg_type, msg))
+def px4_heartbeat(armed=False, main_mode=4, system_status=3):
+    return make_msg(
+        "HEARTBEAT",
+        base_mode=128 if armed else 0,
+        custom_mode=main_mode << 24,
+        system_status=system_status,
+    )
 
 
 class TestConnectionHeartbeatPipeline(unittest.TestCase):
 
-    @patch("QGCR.communication.connection.mavutil")
-    def test_px4_heartbeat_reaches_monitor(self, mock_mavutil):
+    def setUp(self):
+        self.model = DummyModel()
+        self.dispatcher = MagicMock()
 
-        fake_conn = MagicMock()
-        mock_mavutil.mavlink_connection.return_value = fake_conn
+    def test_px4_heartbeat_reaches_model(self):
+        run_connection(self.model, self.dispatcher, [px4_heartbeat()])
 
-        fake_msg = MagicMock()
-        fake_msg.get_type.return_value = "HEARTBEAT"
+        self.assertTrue(self.model.px4_connected)
+        self.assertEqual(self.model.px4_heartbeat_count, 1)
+        self.assertEqual(self.model.px4_mode, "AUTO")
+        self.assertFalse(self.model.px4_armed)
+        self.assertTrue(self.model.ready_to_arm)
 
-        fake_conn.recv_match.side_effect = [fake_msg] + [None] * 1000
+    def test_heartbeat_is_not_dispatched(self):
+        run_connection(self.model, self.dispatcher, [px4_heartbeat()])
+        self.dispatcher.dispatch.assert_not_called()
 
-        dispatcher = DummyDispatcher()
-        monitor = HeartbeatMonitor()
-        dispatcher.subscribe(monitor, "HEARTBEAT")
+    def test_armed_flag_and_not_ready_to_arm(self):
+        run_connection(self.model, self.dispatcher,
+                       [px4_heartbeat(armed=True, system_status=4)])
 
-        # WICHTIG: Connection erwartet NUR dispatcher
-        conn = Connection(dispatcher, wait_for_heartbeat=False)
+        self.assertTrue(self.model.px4_armed)
+        self.assertFalse(self.model.ready_to_arm)
 
-        time.sleep(0.05)
-
-        self.assertEqual(monitor.received, [("HEARTBEAT", fake_msg)])
-
-        conn.close()
+    def test_heartbeat_counter(self):
+        run_connection(self.model, self.dispatcher, [px4_heartbeat()] * 3)
+        self.assertEqual(self.model.px4_heartbeat_count, 3)
 
 
 if __name__ == "__main__":

@@ -1,98 +1,48 @@
-# === PFAD-B FULL FILE: QGCR/test/test_px4_home_position.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_px4_home_position.py ===
 
-import unittest
-import subprocess
 import time
-import os
-import signal
+import unittest
+
 from pymavlink import mavutil
 
+from QGCR.test.unittest.sitl_helper import (
+    PX4Sitl, requires_sitl, gcs_link, wait_for, send_gcs_heartbeat,
+)
 
+
+@requires_sitl
 class TestPX4HomePosition(unittest.TestCase):
 
     def setUp(self):
-        sitl_root = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
-
-        # PX4 starten
-        self.px4 = subprocess.Popen(
-            ["make", "px4_sitl", "gz_rc_cessna"],
-            cwd=sitl_root,
-            preexec_fn=os.setsid,
-        )
-
-        # EIN Socket: TX+RX wie QGC
-        self.mav = mavutil.mavlink_connection(
-            "udpout:127.0.0.1:18570",
-            source_system=255,
-            source_component=190,
-            input=True
-        )
+        self.sitl = PX4Sitl()
+        self.sitl.start()
+        self.mav = gcs_link()
 
     def tearDown(self):
-        try:
-            os.killpg(os.getpgid(self.px4.pid), signal.SIGKILL)
-        except Exception:
-            pass
-
-        try:
-            self.px4.wait(timeout=5)
-        except Exception:
-            pass
-
-        os.system("pkill -9 gzserver")
-        os.system("pkill -9 gzclient")
-        os.system("pkill -9 make")
-        os.system("pkill -9 ninja")
-        os.system("pkill -9 micrortps_agent")
+        self.mav.close()
+        self.sitl.stop()
 
     def test_home_position_request(self):
-        # 1) PX4-Heartbeat abwarten
-        print("[TEST-LOG] Warte auf PX4 HEARTBEAT ...")
-        start = time.time()
-        while time.time() - start < 20:
-            msg = self.mav.recv_match(type="HEARTBEAT", blocking=False)
-            if msg:
-                print("[TEST-LOG] PX4 HEARTBEAT empfangen")
-                break
-            time.sleep(0.1)
+        hb = wait_for(self.mav, "HEARTBEAT", timeout=90)
+        self.assertIsNotNone(hb, "Kein PX4 HEARTBEAT empfangen")
 
-        # 2) GCS-Heartbeats senden
-        print("[TEST-LOG] Sende GCS-Heartbeats ...")
-        for _ in range(5):
-            self.mav.mav.heartbeat_send(
-                mavutil.mavlink.MAV_TYPE_GCS,
-                mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                0,
-                0,
-                mavutil.mavlink.MAV_STATE_ACTIVE,
-            )
-            time.sleep(0.5)
-
-        # 3) HOME_POSITION anfordern
-        print("[TEST-LOG] Sende REQUEST_MESSAGE für HOME_POSITION ...")
-        self.mav.mav.command_long_send(
-            1, 1,
-            mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE,
-            0,
-            mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,
-            0, 0, 0, 0, 0, 0
-        )
-
-        # 4) HOME_POSITION empfangen
+        # Home wird erst nach GPS-Fix gesetzt → mehrfach anfragen
         home = None
-        start = time.time()
-        while time.time() - start < 5.0:
-            msg = self.mav.recv_match(blocking=False)
-            if msg and msg.get_type() == "HOME_POSITION":
-                home = msg
-                print("[TEST-LOG] HOME_POSITION empfangen")
-                print(f"  lat: {home.latitude}")
-                print(f"  lon: {home.longitude}")
-                print(f"  alt: {home.altitude}")
-                break
-            time.sleep(0.1)
+        deadline = time.time() + 60
+        while home is None and time.time() < deadline:
+            send_gcs_heartbeat(self.mav)
+            self.mav.mav.command_long_send(
+                hb.get_srcSystem(), hb.get_srcComponent(),
+                mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE,
+                0,
+                mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,
+                0, 0, 0, 0, 0, 0,
+            )
+            home = wait_for(self.mav, "HOME_POSITION", timeout=1.0)
 
         self.assertIsNotNone(home, "HOME_POSITION wurde nicht empfangen")
+        self.assertNotEqual(home.latitude, 0)
+        self.assertNotEqual(home.longitude, 0)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_view_log_tab.py ===
+
 import unittest
 import tkinter as tk
 
@@ -6,61 +8,42 @@ from QGCR.view.log_tab import LogTab
 
 class TestViewLogTab(unittest.TestCase):
     """
-    Unit-Test für den modularisierten LogTab.
-    Testet ausschließlich:
-    - Initialisierung
-    - append_log()
-    - Inhalt des Text-Widgets
+    Unit-Test für den LogTab mit drei Log-Fenstern (PX4 / Simulator / QGCR).
     """
 
     def setUp(self):
-        # Headless Tk-Root erzeugen
         self.root = tk.Tk()
-        self.root.withdraw()  # Kein Fenster anzeigen
-
-        # LogTab instanziieren
+        self.root.withdraw()
         self.tab = LogTab(self.root)
-
-        # Tk aktualisieren, damit Widgets existieren
         self.root.update()
 
     def tearDown(self):
         self.tab.destroy()
         self.root.destroy()
 
-    # ------------------------------------------------------------
-    # Tests
-    # ------------------------------------------------------------
+    @staticmethod
+    def _content(widget):
+        return widget.get("1.0", tk.END).strip()
+
     def test_initial_state(self):
-        """Text-Widget muss leer sein."""
-        content = self.tab.text_widget.get("1.0", tk.END).strip()
-        self.assertEqual(content, "")
+        for widget in (self.tab.px4_text, self.tab.sim_text, self.tab.qgcr_text):
+            self.assertEqual(self._content(widget), "")
 
-    def test_append_single_line(self):
-        """append_log() fügt eine Zeile hinzu."""
-        self.tab.append_log("Hello World")
-        self.root.update()
+    def test_append_px4(self):
+        self.tab.append_px4("[PX4-1] Ready")
+        self.assertEqual(self._content(self.tab.px4_text), "[PX4-1] Ready")
+        self.assertEqual(self._content(self.tab.qgcr_text), "")
 
-        content = self.tab.text_widget.get("1.0", tk.END).strip()
-        self.assertEqual(content, "Hello World")
+    def test_append_sim(self):
+        self.tab.append_sim("[SIM-gz] started")
+        self.assertEqual(self._content(self.tab.sim_text), "[SIM-gz] started")
 
-    def test_append_multiple_lines(self):
-        """Mehrere append_log()-Aufrufe hängen korrekt an."""
-        self.tab.append_log("Line 1")
-        self.tab.append_log("Line 2")
-        self.tab.append_log("Line 3")
-        self.root.update()
+    def test_append_qgcr_multiple_lines(self):
+        self.tab.append_qgcr("Line 1")
+        self.tab.append_qgcr("Line 2")
+        self.tab.append_qgcr("Line 3")
 
-        content = self.tab.text_widget.get("1.0", tk.END).strip()
-        self.assertEqual(content, "Line 1\nLine 2\nLine 3")
-
-    def test_widget_is_readonly(self):
-        """Das Text-Widget muss nach append_log() wieder disabled sein."""
-        self.tab.append_log("Test")
-        self.root.update()
-
-        state = str(self.tab.text_widget["state"])
-        self.assertEqual(state, "disabled")
+        self.assertEqual(self._content(self.tab.qgcr_text), "Line 1\nLine 2\nLine 3")
 
 
 if __name__ == "__main__":

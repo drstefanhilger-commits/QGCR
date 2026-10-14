@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 from QGCR.states.ready.ready_hfsm import ReadyHFSM
 from QGCR.states.ready.ready_controller import ReadyController
-from QGCR.states.ready_substate import ReadySubState
+from QGCR.states.ready.ready_substate import ReadySubState
 from QGCR.states.main_state import MainState
 
 from QGCR.services.takeoff_microservice import TakeoffMicroService

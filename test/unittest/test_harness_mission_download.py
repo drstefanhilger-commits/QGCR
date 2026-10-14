@@ -29,6 +29,8 @@ class FakeMaster:
     def __init__(self):
         self.sent = []
         self.mav = FakeMav(self)
+        self.target_system = 1
+        self.target_component = 1
 
     def recv_match(self, *args, **kwargs):
         return None

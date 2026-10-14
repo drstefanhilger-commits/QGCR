@@ -2,9 +2,9 @@
 
 import unittest
 
-from QGCR.test.dummy_model import DummyModel
+from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.main.main_hfsm import MainHFSM
-from QGCR.states.main.main_state import MainState
+from QGCR.states.main_state import MainState
 
 
 # ------------------------------------------------------------

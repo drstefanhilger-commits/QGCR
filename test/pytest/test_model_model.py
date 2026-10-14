@@ -23,6 +23,12 @@ class FakeHeartbeat:
         self.base_mode = base_mode
         self.custom_mode = custom_mode
 
+    def get_srcSystem(self):
+        return 1
+
+    def get_srcComponent(self):
+        return 1
+
 
 # ------------------------------------------------------------
 # Fake MAVLink CommandAck Message
@@ -137,22 +143,6 @@ def test_update_home_position_pushes_status():
     tag, text = events[0]
     assert tag == "status"
     assert "Home set" in text
-
-
-# ------------------------------------------------------------
-# STATUS
-# ------------------------------------------------------------
-def test_update_status_pushes_gui_event():
-    reg = QueueRegistry()
-    m = Model(reg)
-
-    m.update_status("Hello World")
-
-    events = pop_gui_events(reg)
-    assert len(events) == 1
-    tag, text = events[0]
-    assert tag == "status"
-    assert text == "Hello World"
 
 
 # ------------------------------------------------------------

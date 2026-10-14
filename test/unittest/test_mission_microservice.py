@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import unittest
 from unittest.mock import MagicMock
-from QGCR.harness.mission_microservice import MissionMicroService
+from QGCR.test.harness.mission_microservice import MissionMicroService
 from QGCR.test.utils.mission_item_builder import make_waypoint
 
 

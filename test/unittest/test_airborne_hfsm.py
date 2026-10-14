@@ -1,150 +1,58 @@
-# === PFAD-B FULL FILE: test/test_airborne_hfsm.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_airborne_hfsm.py ===
 
 import unittest
 from unittest.mock import MagicMock
 
+from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.airborne.airborne_hfsm import AirborneHFSM
-from QGCR.states.airborne.airborne_substate import AirborneSubState
 from QGCR.states.main_state import MainState
 
 
-# ------------------------------------------------------------
-# Mock Model
-# ------------------------------------------------------------
-class MockModel:
-    def __init__(self):
-        # Status + GUI
-        self.update_status = MagicMock()
-
-        # PX4 Status
-        self.px4_heartbeat_ok = True
-
-        # Mission flags
-        self.mission_requested = False
-
-        # MicroServices
-        class Services:
-            pass
-
-        self.services = Services()
-        self.services.mission = MagicMock()
-        self.services.mission.start = MagicMock()
-        self.services.mission.tick = MagicMock()
-        self.services.mission.done = False
-        self.services.mission.error = None
-
-        # Main state
-        self.main_state = MainState.AIRBORNE
-
-
-# ------------------------------------------------------------
-# Tests
-# ------------------------------------------------------------
 class TestAirborneHFSM(unittest.TestCase):
 
     def setUp(self):
-        self.model = MockModel()
-        self.hfsm = AirborneHFSM(self.model)
+        self.model = DummyModel()
+        self.model.px4_connected = True
 
-    # --------------------------------------------------------
-    # Initialisierung
-    # --------------------------------------------------------
-    def test_initial_state_is_hold(self):
-        self.assertEqual(self.hfsm.controller.active_substate,
-                         AirborneSubState.AIRBORNE_HOLD)
+        self.takeoff = MagicMock()
+        self.takeoff.STATE_IDLE = "IDLE"
+        self.takeoff.state = "IDLE"
+        self.model.takeoff = self.takeoff
 
-    # --------------------------------------------------------
-    # HOLD → LOST
-    # --------------------------------------------------------
-    def test_hold_switches_to_lost(self):
-        self.model.px4_heartbeat_ok = False
+        self.fsm = AirborneHFSM(self.model)
 
-        self.hfsm._on_during()
+    def test_enter_sets_state_and_starts_takeoff(self):
+        state = self.fsm.on_update()
 
-        self.assertEqual(self.hfsm.controller.active_substate,
-                         AirborneSubState.AIRBORNE_LOST)
+        self.assertEqual(state, MainState.AIRBORNE)
+        self.assertEqual(self.model.hfsm_main, "AIRBORNE")
+        self.assertEqual(self.model.hfsm_sub, "FLIGHT")
+        self.takeoff.start.assert_called_once()
 
-    # --------------------------------------------------------
-    # HOLD → MISSION
-    # --------------------------------------------------------
-    def test_hold_switches_to_mission(self):
-        self.model.mission_requested = True
+    def test_enter_does_not_restart_running_takeoff(self):
+        self.takeoff.state = "WAIT_CLIMB"
+        self.fsm.on_update()
 
-        self.hfsm._on_during()
+        self.takeoff.start.assert_not_called()
 
-        self.assertEqual(self.hfsm.controller.active_substate,
-                         AirborneSubState.AIRBORNE_MISSION)
+    def test_stays_airborne_and_ticks_takeoff(self):
+        self.fsm.on_update()
+        state = self.fsm.on_update()
 
-    # --------------------------------------------------------
-    # MISSION: MicroService start
-    # --------------------------------------------------------
-    def test_mission_starts_microservice(self):
-        self.model.mission_requested = True
-        self.hfsm._on_during()  # switch to mission
+        self.assertEqual(state, MainState.AIRBORNE)
+        self.assertEqual(self.takeoff.tick.call_count, 2)
 
-        # ENTER mission
-        self.hfsm.controller.active_fsm._on_enter()
+    def test_reset_event_goes_reset(self):
+        self.fsm.on_update()
+        self.model.hfsm_events.append("RESET")
 
-        self.model.services.mission.start.assert_called_once()
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
 
-    # --------------------------------------------------------
-    # MISSION → LOST (Fehler)
-    # --------------------------------------------------------
-    def test_mission_error_switches_to_lost(self):
-        self.model.mission_requested = True
-        self.hfsm._on_during()  # switch to mission
+    def test_connection_lost_goes_reset(self):
+        self.fsm.on_update()
+        self.model.px4_connected = False
 
-        # Fehler simulieren
-        self.model.services.mission.error = "FAIL"
-
-        self.hfsm._on_during()
-
-        self.assertEqual(self.hfsm.controller.active_substate,
-                         AirborneSubState.AIRBORNE_LOST)
-
-    # --------------------------------------------------------
-    # MISSION → HOLD (Erfolg)
-    # --------------------------------------------------------
-    def test_mission_done_switches_to_hold(self):
-        self.model.mission_requested = True
-        self.hfsm._on_during()  # switch to mission
-
-        # Erfolg simulieren
-        self.model.services.mission.done = True
-
-        self.hfsm._on_during()
-
-        self.assertEqual(self.hfsm.controller.active_substate,
-                         AirborneSubState.AIRBORNE_HOLD)
-
-    # --------------------------------------------------------
-    # LOST bleibt LOST
-    # --------------------------------------------------------
-    def test_lost_is_sticky(self):
-        self.model.px4_heartbeat_ok = False
-        self.hfsm._on_during()  # switch to LOST
-
-        # heartbeat wieder ok → LOST bleibt LOST
-        self.model.px4_heartbeat_ok = True
-        self.hfsm._on_during()
-
-        self.assertEqual(self.hfsm.controller.active_substate,
-                         AirborneSubState.AIRBORNE_LOST)
-
-    # --------------------------------------------------------
-    # EXIT → MainState READY
-    # --------------------------------------------------------
-    def test_exit_switches_main_state(self):
-        # Manuell in EXIT setzen
-        self.hfsm.controller.active_substate = AirborneSubState.AIRBORNE_EXIT
-        self.hfsm.controller.active_fsm = self.hfsm.controller.state_map[
-            AirborneSubState.AIRBORNE_EXIT
-        ](self.model)
-
-        self.hfsm._on_during()
-        next_state = self.hfsm._on_exit()
-
-        self.assertEqual(next_state, MainState.READY)
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
 
 
 if __name__ == "__main__":

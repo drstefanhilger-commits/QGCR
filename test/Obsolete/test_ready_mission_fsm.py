@@ -2,9 +2,9 @@
 
 import unittest
 
-from QGCR.test.dummy_model import DummyModel
-from QGCR.states.ready.ready_mission_fsm import ReadyMissionFSM
-from QGCR.states.ready_substate import ReadySubState
+from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.states.ready.subfsms.ready_mission_fsm import ReadyMissionFSM
+from QGCR.states.ready.ready_substate import ReadySubState
 
 
 class TestReadyMissionFSM(unittest.TestCase):

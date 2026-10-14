@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from QGCR.states.main.main_hfsm import MainHFSM
-from QGCR.states.main.main_state import MainState
+from QGCR.states.main_state import MainState
 
 
 # ------------------------------------------------------------

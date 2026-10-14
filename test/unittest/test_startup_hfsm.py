@@ -1,51 +1,67 @@
-# === PFAD-B FULL FILE: test_startup_fsm.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_startup_hfsm.py ===
 
 import unittest
+from unittest.mock import MagicMock, patch
 
-from QGCR.test.dummy_model import DummyModel
-from QGCR.states.startup_substate import SubState
-from QGCR.states.main_state import MainState
+from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.startup.startup_hfsm import StartupHFSM
-from QGCR.events.event import (
-    px4_heartbeat,
-    px4_params_received,
-    px4_params_synced,
-    px4_home_set,
-)
+from QGCR.states.main_state import MainState
 
 
 class TestStartupHFSM(unittest.TestCase):
 
     def setUp(self):
         self.model = DummyModel()
-        self.fsm = StartupHFSM(self.model, state_map=self.model.startup_state_map)
+        self.model.vehicle_configs = ["cfg"]
 
-    def test_sequence(self):
-        # Tick 1: HFSM enters STARTUP_HEARTBEAT
-        state = self.fsm.on_update()
+    @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
+    def test_enter_starts_px4(self, starter_cls):
+        fsm = StartupHFSM(self.model)
+        state = fsm.on_update()
+
         self.assertEqual(state, MainState.STARTUP)
-        self.assertEqual(self.fsm.controller.current_state, SubState.STARTUP_HEARTBEAT)
+        starter_cls.assert_called_once_with(["cfg"], model=self.model)
+        starter_cls.return_value.start_all.assert_called_once()
+        self.assertIs(self.model.startup_controller, starter_cls.return_value)
+        self.assertEqual(self.model.hfsm_main, "STARTUP")
 
-        # HEARTBEAT → PARAMS
-        self.model.event_queue.put(px4_heartbeat())
-        self.fsm.on_update()
-        self.assertEqual(self.fsm.controller.current_state, SubState.STARTUP_PARAMS)
+    @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
+    def test_enter_reuses_existing_controller(self, starter_cls):
+        existing = MagicMock()
+        self.model.startup_controller = existing
 
-        # PARAMS_RECEIVED → bleibt PARAMS
-        self.model.event_queue.put(px4_params_received())
-        self.fsm.on_update()
-        self.assertEqual(self.fsm.controller.current_state, SubState.STARTUP_PARAMS)
+        fsm = StartupHFSM(self.model)
+        fsm.on_update()
 
-        # PARAMS_SYNCED → HOME
-        self.model.event_queue.put(px4_params_synced())
-        self.fsm.on_update()
-        self.assertEqual(self.fsm.controller.current_state, SubState.STARTUP_HOME)
+        starter_cls.assert_not_called()
+        self.assertIs(fsm.startup_controller, existing)
 
-        # HOME_SET → OK → READY
-        self.model.event_queue.put(px4_home_set({"lat": 1, "lon": 2}))
-        final_state = self.fsm.on_update()
-        self.assertEqual(self.fsm.controller.current_state, SubState.STARTUP_OK)
-        self.assertEqual(final_state, MainState.READY)
+    @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
+    def test_waits_for_heartbeat(self, starter_cls):
+        fsm = StartupHFSM(self.model)
+
+        self.assertEqual(fsm.on_update(), MainState.STARTUP)
+        self.assertEqual(fsm.on_update(), MainState.STARTUP)
+
+    @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
+    def test_heartbeat_goes_ready(self, starter_cls):
+        fsm = StartupHFSM(self.model)
+        fsm.on_update()
+
+        self.model.px4_connected = True
+        self.model.px4_heartbeat_count = 1
+
+        self.assertEqual(fsm.on_update(), MainState.READY)
+
+    @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
+    def test_start_error_is_logged(self, starter_cls):
+        starter_cls.return_value.start_all.side_effect = RuntimeError("boom")
+
+        fsm = StartupHFSM(self.model)
+        state = fsm.on_update()
+
+        self.assertEqual(state, MainState.STARTUP)
+        self.assertIn("[QGCR] [StartupHFSM] PX4 start error: boom", self.model.qgcr_logs())
 
 
 if __name__ == "__main__":

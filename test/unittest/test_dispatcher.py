@@ -1,113 +1,73 @@
-# === PFAD-B FULL FILE: test_dispatcher.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_dispatcher.py ===
 
 import unittest
+from types import SimpleNamespace
 
 from QGCR.communication.dispatcher import Dispatcher
-from QGCR.model.model import Model
+from QGCR.test.unittest.fake_mavlink import make_msg
 
 
-# ----------------------------------------------------------------------
-# Kompatible Dummy FSM
-# ----------------------------------------------------------------------
-
-class DummyFSM:
-    def __init__(self, name):
-        self.name = name
+class RecordingService:
+    def __init__(self):
         self.handled = []
-        self.update_count = 0
 
     def on_message(self, msg_type, msg):
         self.handled.append((msg_type, msg))
 
-    def on_update(self):
-        self.update_count += 1
+
+class FailingService:
+    def on_message(self, msg_type, msg):
+        raise RuntimeError("boom")
 
 
-# ----------------------------------------------------------------------
-# Testklasse
-# ----------------------------------------------------------------------
+def make_model(**services):
+    names = ("mission_ms", "upload_ms", "home_ms", "takeoff", "param_sync")
+    return SimpleNamespace(**{n: services.get(n) for n in names})
+
 
 class TestDispatcher(unittest.TestCase):
 
-    # --------------------------------------------------------------
-    # 1) Routing zu einem Subscriber
-    # --------------------------------------------------------------
-    def test_dispatcher_routes_items_to_subscriber(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
+    def test_routes_message_to_all_services(self):
+        services = {n: RecordingService() for n in
+                    ("mission_ms", "upload_ms", "home_ms", "takeoff", "param_sync")}
+        dispatcher = Dispatcher(make_model(**services))
 
-        fsm = DummyFSM("FSM1")
-        dispatcher.subscribe(fsm, "TEST")
+        msg = make_msg("MISSION_COUNT", count=3)
+        dispatcher.dispatch(msg)
 
-        dispatcher.route_message("TEST", {"x": 1})
-        dispatcher.on_update()
+        for svc in services.values():
+            self.assertEqual(svc.handled, [("MISSION_COUNT", msg)])
 
-        self.assertEqual(fsm.handled, [("TEST", {"x": 1})])
+    def test_skips_missing_services(self):
+        home = RecordingService()
+        dispatcher = Dispatcher(make_model(home_ms=home))
 
-    # --------------------------------------------------------------
-    # 2) Unsubscribe funktioniert
-    # --------------------------------------------------------------
-    def test_dispatcher_unsubscribe(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
+        msg = make_msg("HOME_POSITION")
+        dispatcher.dispatch(msg)
 
-        fsm = DummyFSM("FSM1")
-        dispatcher.subscribe(fsm, "TEST")
-        dispatcher.unsubscribe(fsm, "TEST")
+        self.assertEqual(home.handled, [("HOME_POSITION", msg)])
 
-        dispatcher.route_message("TEST", {"x": 1})
-        dispatcher.on_update()
+    def test_skips_services_without_on_message(self):
+        takeoff = RecordingService()
+        dispatcher = Dispatcher(make_model(mission_ms=object(), takeoff=takeoff))
 
-        self.assertEqual(fsm.handled, [])
+        msg = make_msg("COMMAND_ACK")
+        dispatcher.dispatch(msg)
 
-    # --------------------------------------------------------------
-    # 3) Mehrere Subscriber
-    # --------------------------------------------------------------
-    def test_dispatcher_multiple_subscribers(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
+        self.assertEqual(takeoff.handled, [("COMMAND_ACK", msg)])
 
-        fsm1 = DummyFSM("FSM1")
-        fsm2 = DummyFSM("FSM2")
+    def test_error_in_one_service_does_not_stop_others(self):
+        upload = RecordingService()
+        dispatcher = Dispatcher(make_model(mission_ms=FailingService(), upload_ms=upload))
 
-        dispatcher.subscribe(fsm1, "PING")
-        dispatcher.subscribe(fsm2, "PING")
+        msg = make_msg("MISSION_REQUEST_INT", seq=0)
+        dispatcher.dispatch(msg)
 
-        dispatcher.route_message("PING", 42)
-        dispatcher.on_update()
+        self.assertEqual(upload.handled, [("MISSION_REQUEST_INT", msg)])
 
-        self.assertEqual(fsm1.handled, [("PING", 42)])
-        self.assertEqual(fsm2.handled, [("PING", 42)])
-
-    # --------------------------------------------------------------
-    # 4) on_update() ruft jede FSM genau einmal auf
-    # --------------------------------------------------------------
-    def test_dispatcher_on_update_calls_each_fsm_once(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
-
-        fsm1 = DummyFSM("FSM1")
-        fsm2 = DummyFSM("FSM2")
-
-        dispatcher.subscribe(fsm1, "A")
-        dispatcher.subscribe(fsm2, "B")
-
-        dispatcher.on_update()
-
-        self.assertEqual(fsm1.update_count, 1)
-        self.assertEqual(fsm2.update_count, 1)
-
-    # --------------------------------------------------------------
-    # 5) Keine Subscriber → keine Fehler
-    # --------------------------------------------------------------
-    def test_dispatcher_no_subscribers(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
-
-        dispatcher.route_message("UNKNOWN", {})
-        dispatcher.on_update()
-
-        self.assertTrue(True)
+    def test_no_services(self):
+        dispatcher = Dispatcher(make_model())
+        dispatcher.dispatch(make_msg("UNKNOWN"))
 
 
 if __name__ == "__main__":

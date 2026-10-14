@@ -1,12 +1,11 @@
-# === PFAD-B FULL FILE: test_connection_gcs_heartbeat.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_connection_gcs_heartbeat.py ===
 
+import time
 import unittest
 from unittest.mock import MagicMock, patch
-import time
 
-from QGCR.model.model import Model
 from QGCR.communication.connection import Connection
-from QGCR.communication.dispatcher import Dispatcher
+from QGCR.test.unittest.dummy_model import DummyModel
 
 
 class TestConnectionGCSHeartbeat(unittest.TestCase):
@@ -16,32 +15,27 @@ class TestConnectionGCSHeartbeat(unittest.TestCase):
         """
         Verifiziert:
         - Connection erzeugt nur EINE MAVLink-Verbindung
-        - GCS-Heartbeat-Worker sendet über diese Verbindung
-        - heartbeat_send() wird mindestens einmal aufgerufen
+        - GCS-Heartbeat-Worker sendet über diese Verbindung als MAV_TYPE_GCS
         """
+        master = MagicMock()
+        master.recv_match.return_value = None
+        mock_conn.return_value = master
 
-        # Fake MAVLink-Objekt
-        fake_mav = MagicMock()
-        fake_mav.mav.heartbeat_send = MagicMock()
+        conn = Connection(DummyModel(), MagicMock())
+        conn.connect()
 
-        mock_conn.return_value = fake_mav
-
-        model = Model()
-        dispatcher = Dispatcher(model)
-
-        # WICHTIG: Connection erwartet NUR dispatcher
-        conn = Connection(dispatcher, wait_for_heartbeat=False)
-
-        # Worker etwas Zeit geben
-        time.sleep(1.2)
-
-        # Erwartung: heartbeat_send wurde aufgerufen
-        self.assertGreaterEqual(fake_mav.mav.heartbeat_send.call_count, 1)
-
-        # Erwartung: nur eine MAVLink-Verbindung
-        mock_conn.assert_called_once()
+        deadline = time.time() + 2.0
+        while master.mav.heartbeat_send.call_count == 0 and time.time() < deadline:
+            time.sleep(0.05)
 
         conn.close()
+
+        mock_conn.assert_called_once()
+        self.assertGreaterEqual(master.mav.heartbeat_send.call_count, 1)
+
+        args = master.mav.heartbeat_send.call_args[0]
+        self.assertEqual(args[0], 6)   # MAV_TYPE_GCS
+        self.assertEqual(args[1], 8)   # MAV_AUTOPILOT_INVALID
 
 
 if __name__ == "__main__":

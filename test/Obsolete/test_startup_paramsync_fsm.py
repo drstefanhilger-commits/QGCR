@@ -1,5 +1,5 @@
 from QGCR.states.base_fsm import BaseFSM
-from QGCR.states.startup_substate import SubState
+from QGCR.states.startup.startup_substate import StartupSubState as SubState
 from QGCR.events.event import EventType
 
 

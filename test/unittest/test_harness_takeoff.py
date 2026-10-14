@@ -141,7 +141,7 @@ class TestHarnessTakeoff(unittest.TestCase):
 
         # HEARTBEAT (armed)
         hb = make_heartbeat(armed=True)
-        dispatcher.route_message("HEARTBEAT", hb)
+        model.services.takeoff.on_heartbeat(hb)
 
         # Tick 2: WAIT_ARMED → SET_MODE
         fsm.tick()
@@ -153,7 +153,7 @@ class TestHarnessTakeoff(unittest.TestCase):
 
         # Mode-Bestätigung
         model.px4_mode = "AUTO.TAKEOFF"
-        dispatcher.route_message("HEARTBEAT", hb)
+        model.services.takeoff.on_heartbeat(hb)
 
         # Tick 4: WAIT_MODE → SEND_TAKEOFF
         fsm.tick()
@@ -165,7 +165,7 @@ class TestHarnessTakeoff(unittest.TestCase):
 
         # Höhenanstieg simulieren
         pos = make_global_position_int(8.0)
-        dispatcher.route_message("GLOBAL_POSITION_INT", pos)
+        model.services.takeoff.on_global_position_int(pos)
 
         # Tick 6: WAIT_CLIMB → DONE
         fsm.tick()

@@ -4,7 +4,7 @@ import unittest
 from queue import Queue
 
 from QGCR.states.startup.startup_controller import StartupController
-from QGCR.states.startup_substate import SubState
+from QGCR.states.startup.startup_substate import StartupSubState as SubState
 from QGCR.states.startup.subfsms.startup_heartbeat_fsm import StartupHeartbeatFSM
 from QGCR.states.startup.subfsms.startup_param_sync_fsm import StartupParamSyncFSM
 from QGCR.states.startup.subfsms.startup_home_fsm import StartupHomeFSM

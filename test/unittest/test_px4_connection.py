@@ -1,69 +1,34 @@
-# === PFAD-B FULL FILE: QGCR/test/test_px4_connection.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_px4_connection.py ===
 
 import unittest
-import subprocess
-import time
-import os
-import signal
+
 from pymavlink import mavutil
 
-from QGCR.test.test_px4_connection_lib import TestConnection
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gcs_link, wait_for
 
 
+@requires_sitl
 class TestPX4Connection(unittest.TestCase):
+    """
+    PX4-SITL sendet auf Port #0 (18570 → 14550) Heartbeats an die GCS.
+    """
 
     def setUp(self):
-        sitl_root = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
-
-        self.px4 = subprocess.Popen(
-            ["make", "px4_sitl", "gz_rc_cessna"],
-            cwd=sitl_root,
-            preexec_fn=os.setsid,
-        )
-
-        self.mav_in = mavutil.mavlink_connection("udp:0.0.0.0:14550")
-        self.conn = None
+        self.sitl = PX4Sitl()
+        self.sitl.start()
+        self.mav = gcs_link()
 
     def tearDown(self):
-        if self.conn:
-            self.conn.stop()
+        self.mav.close()
+        self.sitl.stop()
 
-        try:
-            os.killpg(os.getpgid(self.px4.pid), signal.SIGTERM)
-        except Exception:
-            pass
+    def test_px4_heartbeat_on_gcs_port(self):
+        hb = wait_for(self.mav, "HEARTBEAT", timeout=90)
 
-        try:
-            self.px4.wait(timeout=10)
-        except Exception:
-            pass
-
-    def test_connection_establishes_and_receives_heartbeats(self):
-        print("[TEST-LOG] Warte auf PX4 HEARTBEAT ...")
-        start = time.time()
-        while time.time() - start < 20:
-            msg = self.mav_in.recv_match(type="HEARTBEAT", blocking=False)
-            if msg:
-                print("[TEST-LOG] PX4 HEARTBEAT empfangen")
-                break
-            time.sleep(0.1)
-
-        print("[TEST-LOG] Starte TestConnection ...")
-        self.conn = TestConnection()
-        self.conn.start()
-
-        time.sleep(3.0)
-
-        hb_count = 0
-        start = time.time()
-        while time.time() - start < 5.0:
-            msg = self.mav_in.recv_match(type="HEARTBEAT", blocking=False)
-            if msg:
-                hb_count += 1
-            time.sleep(0.1)
-
-        print(f"[TEST-LOG] PX4 Heartbeats nach GCS-HB: {hb_count}")
-        self.assertGreater(hb_count, 0)
+        self.assertIsNotNone(hb, "Kein PX4 HEARTBEAT auf udp:0.0.0.0:14550")
+        self.assertEqual(hb.get_srcSystem(), 1)
+        self.assertEqual(hb.autopilot, mavutil.mavlink.MAV_AUTOPILOT_PX4)
+        self.assertEqual(hb.type, mavutil.mavlink.MAV_TYPE_FIXED_WING)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import unittest
 
 from QGCR.states.startup.startup_hfsm import StartupHFSM
 from QGCR.states.main_state import MainState
-from QGCR.states.startup_substate import SubState
+from QGCR.states.startup.startup_substate import StartupSubState as SubState
 
 from QGCR.states.startup.subfsms.startup_heartbeat_fsm import StartupHeartbeatFSM
 from QGCR.states.startup.subfsms.startup_param_sync_fsm import StartupParamSyncFSM
@@ -18,7 +18,7 @@ from QGCR.events.event import (
     px4_home_set,
 )
 
-from QGCR.test.dummy_model import DummyModel
+from QGCR.test.unittest.dummy_model import DummyModel
 
 
 class TestStartupHFSMIntegration(unittest.TestCase):

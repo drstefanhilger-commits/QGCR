@@ -2,7 +2,7 @@
 
 import unittest
 
-from QGCR.test.dummy_model import DummyModel
+from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.airborne.airborne_controller import AirborneController
 from QGCR.states.airborne.airborne_substate import AirborneSubState
 

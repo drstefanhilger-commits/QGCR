@@ -1,114 +1,57 @@
-# === PFAD-B FULL FILE: test_dispatcher.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_connection.py ===
 
 import unittest
+from unittest.mock import MagicMock
 
-from QGCR.communication.dispatcher import Dispatcher
-from QGCR.model.model import Model
-
-
-# ----------------------------------------------------------------------
-# Kompatible Dummy FSM
-# ----------------------------------------------------------------------
-
-class DummyFSM:
-    def __init__(self, name):
-        self.name = name
-        self.handled = []
-        self.update_count = 0
-
-    def on_message(self, msg_type, msg):
-        self.handled.append((msg_type, msg))
-
-    def on_update(self):
-        self.update_count += 1
+from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.test.unittest.fake_mavlink import make_msg, run_connection
 
 
-# ----------------------------------------------------------------------
-# Testklasse
-# ----------------------------------------------------------------------
+class TestConnection(unittest.TestCase):
 
-class TestDispatcher(unittest.TestCase):
+    def setUp(self):
+        self.model = DummyModel()
+        self.dispatcher = MagicMock()
 
-    # --------------------------------------------------------------
-    # 1) Routing zu einem Subscriber
-    # --------------------------------------------------------------
-    def test_dispatcher_routes_items_to_subscriber(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
+    def test_binds_gcs_port(self):
+        _, _, mav_conn = run_connection(self.model, self.dispatcher, [])
 
-        fsm = DummyFSM("FSM1")
-        dispatcher.subscribe(fsm, "TEST")
+        mav_conn.assert_called_once_with(
+            "udp:0.0.0.0:14550",
+            source_system=255,
+            source_component=0,
+            autoreconnect=False,
+        )
 
-        dispatcher.route_message("TEST", {"x": 1})
-        dispatcher.on_update()
+    def test_command_ack_goes_to_model_and_dispatcher(self):
+        ack = make_msg("COMMAND_ACK", command=400, result=0)
+        run_connection(self.model, self.dispatcher, [ack])
 
-        self.assertEqual(fsm.handled, [("TEST", {"x": 1})])
+        self.dispatcher.dispatch.assert_called_once_with(ack)
+        self.assertIn(("status", "ACK: 400 → 0"), self.model.gui_items())
 
-    # --------------------------------------------------------------
-    # 2) Unsubscribe funktioniert
-    # --------------------------------------------------------------
-    def test_dispatcher_unsubscribe(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
+    def test_statustext_goes_to_px4_log_and_dispatcher(self):
+        txt = make_msg("STATUSTEXT", text="Ready for takeoff", severity=6)
+        run_connection(self.model, self.dispatcher, [txt])
 
-        fsm = DummyFSM("FSM1")
-        dispatcher.subscribe(fsm, "TEST")
-        dispatcher.unsubscribe(fsm, "TEST")
+        self.dispatcher.dispatch.assert_called_once_with(txt)
+        self.assertEqual(
+            self.model.queue_registry.px4_log_queue.get_nowait(),
+            "[PX4-1] [STATUSTEXT:6] Ready for takeoff",
+        )
 
-        dispatcher.route_message("TEST", {"x": 1})
-        dispatcher.on_update()
+    def test_other_messages_go_to_dispatcher(self):
+        cnt = make_msg("MISSION_COUNT", count=2)
+        run_connection(self.model, self.dispatcher, [cnt])
 
-        self.assertEqual(fsm.handled, [])
+        self.dispatcher.dispatch.assert_called_once_with(cnt)
 
-    # --------------------------------------------------------------
-    # 3) Mehrere Subscriber
-    # --------------------------------------------------------------
-    def test_dispatcher_multiple_subscribers(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
+    def test_send_and_close(self):
+        conn, master, _ = run_connection(self.model, self.dispatcher, [])
 
-        fsm1 = DummyFSM("FSM1")
-        fsm2 = DummyFSM("FSM2")
-
-        dispatcher.subscribe(fsm1, "PING")
-        dispatcher.subscribe(fsm2, "PING")
-
-        dispatcher.route_message("PING", 42)
-        dispatcher.on_update()
-
-        self.assertEqual(fsm1.handled, [("PING", 42)])
-        self.assertEqual(fsm2.handled, [("PING", 42)])
-
-    # --------------------------------------------------------------
-    # 4) on_update() ruft jede FSM genau einmal auf
-    # --------------------------------------------------------------
-    def test_dispatcher_on_update_calls_each_fsm_once(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
-
-        fsm1 = DummyFSM("FSM1")
-        fsm2 = DummyFSM("FSM2")
-
-        dispatcher.subscribe(fsm1, "A")
-        dispatcher.subscribe(fsm2, "B")
-
-        dispatcher.on_update()
-
-        self.assertEqual(fsm1.update_count, 1)
-        self.assertEqual(fsm2.update_count, 1)
-
-    # --------------------------------------------------------------
-    # 5) Keine Subscriber → keine Fehler
-    # --------------------------------------------------------------
-    def test_dispatcher_no_subscribers(self):
-        model = Model()
-        dispatcher = Dispatcher(model)
-
-        # Sollte einfach durchlaufen
-        dispatcher.route_message("UNKNOWN", {})
-        dispatcher.on_update()
-
-        self.assertTrue(True)
+        conn.send("MSG")
+        master.mav.send.assert_called_once_with("MSG")
+        master.close.assert_called()
 
 
 if __name__ == "__main__":

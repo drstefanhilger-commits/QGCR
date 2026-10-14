@@ -1,3 +1,5 @@
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_view_status_bar.py ===
+
 import unittest
 import tkinter as tk
 
@@ -6,50 +8,47 @@ from QGCR.view.status_bar import StatusBar
 
 class TestViewStatusBar(unittest.TestCase):
     """
-    Unit-Test für die modularisierte StatusBar.
-    Testet ausschließlich:
-    - Initialisierung
-    - set_status()
-    - get_status()
+    Unit-Test für die StatusBar (HFSM, Sub-State, Mode, Armed, HB, Spinner).
     """
 
     def setUp(self):
-        # Headless Tk-Root erzeugen
         self.root = tk.Tk()
-        self.root.withdraw()  # Kein Fenster anzeigen
-
-        # StatusBar instanziieren
-        self.bar = StatusBar(self.root)
-
-        # Tk aktualisieren, damit Widgets existieren
+        self.root.withdraw()
+        self.bar = StatusBar(self.root, controller=None)
         self.root.update()
 
     def tearDown(self):
         self.bar.destroy()
         self.root.destroy()
 
-    # ------------------------------------------------------------
-    # Tests
-    # ------------------------------------------------------------
+    def text(self):
+        return self.bar.status_var.get()
+
     def test_initial_state(self):
-        """Statusbar startet mit 'Bereit'."""
-        self.assertEqual(self.bar.get_status(), "Bereit")
+        self.assertEqual(
+            self.text(),
+            "HFSM: -    Sub: -    Mode: -    Armed: DISARMED    HB: 0    Spin: |",
+        )
 
-    def test_set_status(self):
-        """set_status() aktualisiert den Text korrekt."""
-        self.bar.set_status("PX4 verbunden")
-        self.root.update()
+    def test_setters_update_text(self):
+        self.bar.set_hfsm_state("READY")
+        self.bar.set_sub_state("IDLE")
+        self.bar.set_mode("AUTO")
+        self.bar.set_armed(True)
+        self.bar.set_hb(42)
 
-        self.assertEqual(self.bar.get_status(), "PX4 verbunden")
+        self.assertEqual(
+            self.text(),
+            "HFSM: READY    Sub: IDLE    Mode: AUTO    Armed: ARMED    HB: 42    Spin: |",
+        )
 
-    def test_multiple_updates(self):
-        """Mehrere Updates überschreiben den Status korrekt."""
-        self.bar.set_status("A")
-        self.bar.set_status("B")
-        self.bar.set_status("C")
-        self.root.update()
+    def test_spinner_wraps_around(self):
+        frames = []
+        for _ in range(4):
+            self.bar.spin()
+            frames.append(self.text().rsplit(" ", 1)[-1])
 
-        self.assertEqual(self.bar.get_status(), "C")
+        self.assertEqual(frames, ["/", "-", "\\", "|"])
 
 
 if __name__ == "__main__":

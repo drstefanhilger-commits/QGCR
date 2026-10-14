@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from QGCR.states.ready.ready_controller import ReadyController
-from QGCR.states.ready_substate import ReadySubState
+from QGCR.states.ready.ready_substate import ReadySubState
 
 
 # ------------------------------------------------------------

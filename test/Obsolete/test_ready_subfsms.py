@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 from QGCR.states.ready.subfsms.ready_idle_fsm import ReadyIdleFSM
 from QGCR.states.ready.subfsms.ready_takeoff_fsm import ReadyTakeoffFSM
 from QGCR.states.ready.subfsms.ready_heartbeat_lost_fsm import ReadyHeartbeatLostFSM
-from QGCR.states.ready_substate import ReadySubState
+from QGCR.states.ready.ready_substate import ReadySubState
 
 
 # ------------------------------------------------------------

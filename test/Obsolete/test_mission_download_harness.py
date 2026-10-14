@@ -6,7 +6,7 @@ from pymavlink import mavutil
 from QGCR.model.model import Model
 from QGCR.services.mission_download_service import MissionDownloadService
 from QGCR.states.startup.subfsms.startup_mission_fsm import StartupMissionFSM
-from QGCR.states.startup_substate import SubState
+from QGCR.states.startup.startup_substate import StartupSubState as SubState
 
 
 # ------------------------------------------------------------

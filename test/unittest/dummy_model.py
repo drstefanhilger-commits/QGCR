@@ -1,52 +1,35 @@
-# === PFAD-B FULL FILE: dummy_model.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/dummy_model.py ===
 
-from queue import Queue
-from QGCR.states.startup.startup_state_map import STARTUP_STATE_MAP
-from QGCR.states.ready.ready_state_map import READY_STATE_MAP
-from QGCR.states.startup.startup_state_map import STARTUP_STATE_MAP
+from collections import deque
+
+from QGCR.core.queue_registry import QueueRegistry
+from QGCR.logging.log_router import LogRouter
+from QGCR.model.model import Model
 
 
-class DummyModel:
+class DummyModel(Model):
     """
-    Minimalmodell für FSM-Tests.
-    Stellt nur die Felder bereit, die die Startup- und Ready-FSM benötigen.
+    Echtes Model mit eigener QueueRegistry und LogRouter für FSM-Tests.
     """
 
     def __init__(self):
-        # ------------------------------------------------------------
-        # Event-Queue (Startup-FSM)
-        # ------------------------------------------------------------
-        self.event_queue = Queue()
+        super().__init__(queue_registry=QueueRegistry())
+        self.log = LogRouter(self, self.queue_registry)
 
-        # ------------------------------------------------------------
-        # GUI-Queue (Ready-FSM)
-        # ------------------------------------------------------------
-        self.queue_gui = Queue()
+        # GUI-Events (von SubFSMs per popleft() gelesen)
+        self.gui_events = deque()
 
-        # ------------------------------------------------------------
-        # Ready-FSM Flags
-        # ------------------------------------------------------------
-        self.takeoff_requested = False
-        self.mission_requested = False
+    # ------------------------------------------------------------
+    # Test-Helfer
+    # ------------------------------------------------------------
+    def gui_items(self):
+        """Alle bisher in die GUI-Queue geschobenen Einträge."""
+        return self.queue_registry.require("gui").pop_all()
 
-        # ------------------------------------------------------------
-        # Heartbeat-Status (Startup-FSM)
-        # ------------------------------------------------------------
-        self.px4_heartbeat_ok = True
-
-        # ------------------------------------------------------------
-        # State Maps (HFSM benötigt diese!)
-        # ------------------------------------------------------------
-        self.startup_state_map = STARTUP_STATE_MAP
-        self.ready_state_map = READY_STATE_MAP
-
-        # ------------------------------------------------------------
-        # Optional: Mission-Flags (falls FSM sie prüft)
-        # ------------------------------------------------------------
-        self.mission_uploaded = False
-        self.mission_active = False
-
-        # ------------------------------------------------------------
-        # Startup map
-        # ------------------------------------------------------------
-        self.startup_state_map = STARTUP_STATE_MAP
+    def qgcr_logs(self):
+        """Alle bisher geloggten QGCR-Zeilen."""
+        q = self.queue_registry.qgcr_log_queue
+        items = []
+        while not q.empty():
+            items.append(q.get_nowait())
+        return items

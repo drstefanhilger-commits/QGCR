@@ -1,98 +1,61 @@
-# === PFAD-B FULL FILE: QGCR/test/test_integration_tab_router_mainwindow.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_integration_tab_router_mainwindow.py ===
 
 import unittest
 import tkinter as tk
+from unittest.mock import MagicMock
 
 from QGCR.view.main_window import MainWindow
-
-
-# ------------------------------------------------------------
-# Dummy Controller für Integrationstest
-# ------------------------------------------------------------
-class DummyController:
-    def __init__(self):
-        self.called = []
-
-    # GUI callbacks (werden vom MainWindow gesetzt)
-    def request_takeoff(self): pass
-    def request_land(self): pass
-    def request_arm(self): pass
-    def request_disarm(self): pass
-    def request_mission_upload(self): pass
-    def request_mission_download(self): pass
-
-
-# ------------------------------------------------------------
-# Dummy TabRouter, der nur protokolliert
-# ------------------------------------------------------------
-class DummyTabRouter:
-    def __init__(self):
-        self.events = []
-
-    def on_tab_changed(self, tab_name):
-        self.events.append(tab_name)
+from QGCR.view.tab_router import TabRouter
 
 
 class TestIntegrationTabRouterMainWindow(unittest.TestCase):
+    """
+    Tab-Wechsel ist in der aktuellen Architektur eine reine GUI-Operation:
+    MainWindow baut Home/Mission/Log + StatusBar, der TabRouter löst nichts aus.
+    """
 
     def setUp(self):
-        # Headless Tk
         self.root = tk.Tk()
         self.root.withdraw()
 
-        # Dummy Controller
-        self.ctrl = DummyController()
-
-        # Dummy TabRouter
-        self.router = DummyTabRouter()
-
-        # MainWindow instanziieren
-        self.gui = MainWindow(self.ctrl)
-
-        # TabRouter ersetzen
-        self.gui.tab_router = self.router
-
+        self.ctrl = MagicMock()
+        self.gui = MainWindow(self.root, self.ctrl)
         self.gui.update()
-
-        # Initiales Event ignorieren
-        self.router.events.clear()
 
     def tearDown(self):
         self.gui.destroy()
         self.root.destroy()
 
-    # ------------------------------------------------------------
-    # Hilfsfunktion: Tab wechseln
-    # ------------------------------------------------------------
     def select_tab(self, tab_text):
         notebook = self.gui.notebook
-
-        for i in range(len(notebook.tabs())):
-            if notebook.tab(i, "text") == tab_text:
-                notebook.select(i)
+        for tab_id in notebook.tabs():
+            if notebook.tab(tab_id, "text") == tab_text:
+                notebook.select(tab_id)
                 break
-
-        notebook.event_generate("<<NotebookTabChanged>>")
         self.gui.update_idletasks()
+        return notebook.nametowidget(notebook.select())
 
-    # ------------------------------------------------------------
-    # Tests
-    # ------------------------------------------------------------
+    def test_tabs_present(self):
+        texts = [self.gui.notebook.tab(t, "text") for t in self.gui.notebook.tabs()]
+        self.assertEqual(texts, ["Home", "Mission", "Log"])
+
     def test_switch_to_mission(self):
-        self.select_tab("Mission")
-        self.assertEqual(self.router.events, ["Mission"])
-
-    def test_switch_to_home(self):
-        self.select_tab("Home")
-        self.assertEqual(self.router.events, ["Home"])
+        self.assertIs(self.select_tab("Mission"), self.gui.mission_tab)
 
     def test_switch_to_log(self):
-        self.select_tab("Log")
-        self.assertEqual(self.router.events, ["Log"])
+        self.assertIs(self.select_tab("Log"), self.gui.log_tab)
 
-    def test_switch_to_capabilities(self):
-        self.select_tab("Capabilities")
-        self.assertEqual(self.router.events, ["Capabilities"])
+    def test_switch_back_to_home(self):
+        self.select_tab("Log")
+        self.assertIs(self.select_tab("Home"), self.gui.home_tab)
+
+    def test_status_bar_present(self):
+        self.assertIs(self.gui.status_bar.controller, self.ctrl)
+
+    def test_tab_router_has_no_side_effects(self):
+        router = TabRouter(self.ctrl)
+        router.on_tab_changed("Mission")
+        self.assertEqual(self.ctrl.method_calls, [])
 
 
 if __name__ == "__main__":

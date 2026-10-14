@@ -1,143 +1,64 @@
-# === PFAD-B FULL FILE: tests/test_ready_hfsm.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_ready_hfsm.py ===
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.ready.ready_hfsm import ReadyHFSM
-from QGCR.states.ready_substate import ReadySubState
 from QGCR.states.main_state import MainState
 
 
-# ------------------------------------------------------------
-# Hilfs-Mock für Model
-# ------------------------------------------------------------
-class MockModel:
-    def __init__(self):
-        self.queue_gui = MagicMock()
-        self.update_status = MagicMock()
-
-        # SubFSM-relevante Flags
-        self.takeoff_requested = False
-        self.px4_heartbeat_ok = True
-
-        # MicroServices
-        class Services:
-            pass
-
-        self.services = Services()
-        self.services.takeoff = MagicMock()
-
-
-# ------------------------------------------------------------
-# Hilfs-Mock für SubFSMs
-# ------------------------------------------------------------
-class MockSubFSM:
-    """Simuliert eine SubFSM mit kontrollierbarem Rückgabeverhalten."""
-
-    def __init__(self, model, return_state):
-        self.model = model
-        self.return_state = return_state
-        self.on_update_called = False
-        self.handle_event_called = False
-
-    def on_update(self):
-        self.on_update_called = True
-        return self.return_state
-
-    def handle_event(self, event):
-        self.handle_event_called = True
-        return self.return_state
-
-
-# ------------------------------------------------------------
-# Test ReadyHFSM
-# ------------------------------------------------------------
 class TestReadyHFSM(unittest.TestCase):
 
     def setUp(self):
-        self.model = MockModel()
+        self.model = DummyModel()
+        self.model.px4_connected = True
+        self.model.takeoff = MagicMock()
+        self.fsm = ReadyHFSM(self.model)
 
-        # Wir ersetzen die echten SubFSMs durch MockSubFSMs
-        self.state_map = {
-            ReadySubState.READY_IDLE: lambda m: MockSubFSM(m, ReadySubState.READY_IDLE),
-            ReadySubState.READY_TAKEOFF: lambda m: MockSubFSM(m, ReadySubState.READY_TAKEOFF),
-            ReadySubState.READY_HEARTBEAT_LOST: lambda m: MockSubFSM(m, ReadySubState.READY_HEARTBEAT_LOST),
-        }
+    def test_enter_sets_state_and_clears_events(self):
+        self.model.hfsm_events.append("TAKEOFF")   # alter Event aus Vorzyklus
 
-    # ------------------------------------------------------------
-    # ENTER
-    # ------------------------------------------------------------
-    def test_enter_calls_gui_and_status(self):
-        fsm = ReadyHFSM(self.model, self.state_map)
-        fsm._on_enter()
+        state = self.fsm.on_update()
 
-        self.model.update_status.assert_called_once()
-        self.model.queue_gui.put.assert_called()
+        self.assertEqual(state, MainState.READY)
+        self.assertEqual(self.model.hfsm_main, "READY")
+        self.assertEqual(self.model.hfsm_sub, "IDLE")
+        self.assertEqual(len(self.model.hfsm_events), 0)
 
-    # ------------------------------------------------------------
-    # DURING: Idle bleibt Idle
-    # ------------------------------------------------------------
-    def test_idle_stays_idle(self):
-        fsm = ReadyHFSM(self.model, self.state_map)
-        fsm._on_enter()
+    def test_stays_ready_and_ticks_takeoff(self):
+        self.fsm.on_update()
+        state = self.fsm.on_update()
 
-        fsm._on_during()
+        self.assertEqual(state, MainState.READY)
+        self.assertEqual(self.model.takeoff.tick.call_count, 2)
 
-        self.assertEqual(fsm.active_substate, ReadySubState.READY_IDLE)
+    def test_takeoff_event_goes_airborne(self):
+        self.fsm.on_update()
+        self.model.hfsm_events.append("TAKEOFF")
 
-    # ------------------------------------------------------------
-    # DURING: Idle → Takeoff
-    # ------------------------------------------------------------
-    def test_idle_to_takeoff(self):
-        fsm = ReadyHFSM(self.model, self.state_map)
-        fsm._on_enter()
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
 
-        # SubFSM soll TAKEOFF zurückgeben
-        fsm.active_fsm.return_state = ReadySubState.READY_TAKEOFF
+    def test_reset_event_goes_reset(self):
+        self.fsm.on_update()
+        self.model.hfsm_events.append("RESET")
 
-        fsm._on_during()
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
 
-        self.assertEqual(fsm.active_substate, ReadySubState.READY_TAKEOFF)
+    def test_connection_lost_ignored_during_grace_phase(self):
+        self.fsm.on_update()
+        self.model.px4_connected = False
 
-    # ------------------------------------------------------------
-    # DURING: Idle → Heartbeat Lost
-    # ------------------------------------------------------------
-    def test_idle_to_heartbeat_lost(self):
-        fsm = ReadyHFSM(self.model, self.state_map)
-        fsm._on_enter()
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
 
-        fsm.active_fsm.return_state = ReadySubState.READY_HEARTBEAT_LOST
+    def test_connection_lost_after_grace_phase_goes_reset(self):
+        with patch("QGCR.states.ready.ready_hfsm.time.time", return_value=1000.0):
+            self.fsm.on_update()
 
-        fsm._on_during()
+        self.model.px4_connected = False
 
-        self.assertEqual(fsm.active_substate, ReadySubState.READY_HEARTBEAT_LOST)
-
-    # ------------------------------------------------------------
-    # Events werden korrekt weitergeleitet
-    # ------------------------------------------------------------
-    def test_event_forwarding(self):
-        fsm = ReadyHFSM(self.model, self.state_map)
-        fsm._on_enter()
-
-        fsm.active_fsm.handle_event_called = False
-        fsm.handle_event("TEST_EVENT")
-
-        self.assertTrue(fsm.active_fsm.handle_event_called)
-
-    # ------------------------------------------------------------
-    # Ungültiger Substate wird ignoriert
-    # ------------------------------------------------------------
-    def test_invalid_substate_is_ignored(self):
-        fsm = ReadyHFSM(self.model, self.state_map)
-        fsm._on_enter()
-
-        # Simuliere ungültigen Rückgabewert
-        fsm.active_fsm.return_state = "INVALID_STATE"
-
-        fsm._on_during()
-
-        # Substate bleibt unverändert
-        self.assertEqual(fsm.active_substate, ReadySubState.READY_IDLE)
+        with patch("QGCR.states.ready.ready_hfsm.time.time", return_value=1006.0):
+            self.assertEqual(self.fsm.on_update(), MainState.RESET)
 
 
 if __name__ == "__main__":

@@ -58,6 +58,24 @@ python3 -m QGCR.main
 
 PX4 liegt standardmaessig unter `~/PX4-Autopilot`, sonst `export PX4_DIR=/pfad/zu/PX4-Autopilot`.
 
+Tests (aus `~/projects`):
+
+```bash
+python3 -m unittest discover -s QGCR/test/unittest -t . -v
+```
+
+```bash
+python3 -m pytest QGCR/test/pytest
+```
+
+PX4-SITL-Tests (`test_px4_*.py`) starten PX4 + Gazebo headless und laufen nur mit `QGCR_SITL=1`:
+
+```bash
+QGCR_SITL=1 python3 -m unittest discover -s QGCR/test/unittest -t . -p "test_px4_*.py" -v
+```
+
+`test/Obsolete/` enthaelt Tests gegen nicht mehr existierende Module/APIs (werden nicht ausgefuehrt).
+
 # PX4 SITL GUI (alt)
 
 python3 -m unittest discover gui_alt/test -v

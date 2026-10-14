@@ -5,7 +5,7 @@ import types
 
 from QGCR.communication.dispatcher import Dispatcher
 from QGCR.model.model import Model
-from QGCR.test.dummy_model import DummyModel
+from QGCR.test.unittest.dummy_model import DummyModel
 
 
 # ------------------------------------------------------------

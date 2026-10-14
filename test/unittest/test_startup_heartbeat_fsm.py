@@ -1,9 +1,10 @@
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_startup_heartbeat_fsm.py ===
+
 import unittest
-from queue import Queue
+
+from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.startup.subfsms.startup_heartbeat_fsm import StartupHeartbeatFSM
-from QGCR.states.startup_substate import SubState
-from QGCR.events.event import Event, EventType
-from QGCR.test.dummy_model import DummyModel
+from QGCR.states.startup.startup_substate import StartupSubState
 
 
 class TestStartupHeartbeatFSM(unittest.TestCase):
@@ -13,23 +14,29 @@ class TestStartupHeartbeatFSM(unittest.TestCase):
         self.fsm = StartupHeartbeatFSM(self.model)
 
     def test_initial_state(self):
-        self.assertEqual(self.fsm.state_enum, SubState.STARTUP_HEARTBEAT)
+        self.assertEqual(self.fsm.state_enum, StartupSubState.STARTUP_HEARTBEAT)
+
+    def test_enter_pushes_status(self):
+        self.fsm.on_update()
+        self.assertIn(("status", "Startup: Waiting for PX4 heartbeat"), self.model.gui_items())
 
     def test_no_heartbeat(self):
         next_state = self.fsm.on_update()
-        self.assertEqual(next_state, SubState.STARTUP_HEARTBEAT)
+        self.assertEqual(next_state, StartupSubState.STARTUP_HEARTBEAT)
 
-    def test_heartbeat_event(self):
-        # Heartbeat in Queue legen
-        self.model.event_queue.put(Event(EventType.PX4_HEARTBEAT, {}))
+    def test_heartbeat_goes_to_params(self):
+        self.model.px4_connected = True
+        self.model.px4_heartbeat_count = 1
 
         next_state = self.fsm.on_update()
-        self.assertEqual(next_state, SubState.STARTUP_PARAMS)
+        self.assertEqual(next_state, StartupSubState.STARTUP_PARAMS)
 
-    def test_handle_event(self):
-        event = Event(EventType.PX4_HEARTBEAT, {})
-        self.fsm.handle_event(event)
-        self.assertTrue(self.model.px4_heartbeat_ok)
+    def test_connected_without_count_stays(self):
+        self.model.px4_connected = True
+        self.model.px4_heartbeat_count = 0
+
+        next_state = self.fsm.on_update()
+        self.assertEqual(next_state, StartupSubState.STARTUP_HEARTBEAT)
 
 
 if __name__ == "__main__":
