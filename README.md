@@ -84,339 +84,179 @@ python3 -m unittest discover gui_alt/test -v
 
 # 🧭 Architekturübersicht
 
-Dieses Projekt implementiert eine modulare, hierarchische Zustandsmaschinen‑Architektur (HFSM) für die Steuerung eines UAV‑SITL‑Setups.  
-Die GUI, die FSMs und die Kommunikationsschicht sind klar voneinander getrennt und folgen einer deterministischen Initialisierungsreihenfolge.
+QGCR ist eine Tkinter-Bodenstation für PX4-SITL (Gazebo Harmonic). Der Systemzustand wird von
+High-Level-FSMs (HFSMs) gesteuert, die ein zentraler `MainController` tickt. GUI, Zustandslogik und
+MAVLink-Kommunikation laufen in getrennten Threads und tauschen Daten nur über das `Model` aus.
+
+```
+PX4-SITL ──UDP 18570 → 14550──► Connection (udp:0.0.0.0:14550)
+                                 ├─ RX-Thread: HEARTBEAT / GLOBAL_POSITION_INT / HOME_POSITION / COMMAND_ACK → Model
+                                 │             STATUSTEXT → PX4-Log,  alle übrigen (+ COMMAND_ACK) → Dispatcher → MicroServices
+                                 └─ GCS-Heartbeat-Thread (1 Hz) → PX4
+
+Update-Thread (20 Hz):  model.check_timeout() → MicroServiceController.tick() → MainController.on_update()
+Tk-Mainloop (GUI):      Buttons → GUIController.handle_button_event() → model.hfsm_events
+                        gui_tick (500 ms): Log-Queues → LogTab,  Model → StatusBar
+```
 
 ---
 
 # 🏗️ Systemkomponenten
 
-## 1. **Model**
-Zentrale Datenhaltung der Anwendung.  
-Enthält u. a.:
+| Komponente | Datei | Aufgabe |
+|---|---|---|
+| `QueueRegistry` | `core/queue_registry.py` | System-Queues `telemetry`, `fsm`, `mission`, `gui` + Log-Queues `px4_log_queue`, `sim_log_queue`, `qgcr_log_queue` |
+| `Model` | `model/model.py` | Zentrale Datenhaltung (siehe unten) |
+| `LogRouter` | `logging/log_router.py` | `model.log.px4(id, text)`, `.sim(src, text)`, `.qgcr(text)` → Log-Queues |
+| `Connection` | `communication/connection.py` | MAVLink über Port #0, RX- und GCS-Heartbeat-Thread |
+| `Dispatcher` | `communication/dispatcher.py` | Verteilt Nachrichten an `on_message(msg_type, msg)` der MicroServices |
+| `MicroServiceController` | `controller/microservice_controller.py` | Erzeugt und tickt die MicroServices |
+| `MainController` | `controller/main_controller.py` | Tickt die aktive HFSM, wechselt HFSMs (kein FSM) |
+| `GUIController` | `controller/gui_controller.py` | Vermittelt zwischen GUI, Model und MainWindow |
+| `PX4SwarmStarter` | `sim/px4_swarm_starter.py` | Startet/stoppt PX4-SITL-Instanzen (`make px4_sitl gz_<modell>`) |
+| `StartupCleanup` | `core/startup_cleanup.py` | Beendet PX4-/Gazebo-Reste, gibt Ports frei, löscht Gazebo-SHM |
 
-- Missionsdaten  
-- MAVLink‑Kommandos  
-- Parser  
-- Zustandsvariablen  
-
-Das Model ist **zustandslos gegenüber der FSM‑Architektur** und wird von allen FSMs gemeinsam genutzt.
-
----
-
-## 2. **HeartbeatMonitor**
-Ein einfacher Timer‑basierter Monitor, der Heartbeat‑Timeouts erkennt.
-
-- besitzt **keine** Abhängigkeiten  
-- wird von der Connection genutzt  
-- erzeugt Events wie „PX4_LOST“ oder „GCS_LOST“
-
-Signatur:
+## Model
 
 ```python
-HeartbeatMonitor(timeout_s=2.0)
+Model(queue_registry)
 ```
 
----
+- **Heartbeat:** `px4_connected`, `px4_heartbeat_count`, `px4_last_heartbeat`;
+  `check_timeout()` setzt `px4_connected=False` nach `HEARTBEAT_TIMEOUT` (8 s) und 2 Fehlversuchen
+  (es gibt keinen separaten HeartbeatMonitor)
+- **Fahrzeug:** `px4_mode`, `px4_armed`, `ready_to_arm`, `vehicle_lat/lon/alt`, `home_lat/lon/alt`
+- **Mission:** `mission` (`MissionData`: `items`, `count`, `ready`), `clear_mission()`, `add_mission_item()`
+- **HFSM:** `hfsm_events` (deque, GUI → HFSM), `hfsm_main`, `hfsm_sub`, `push_state_update()`
+- **MicroServices:** `services` (Container mit `_NullService`-Platzhaltern) und Aliase
+  `takeoff`, `home_ms`, `mission_ms`, `upload_ms`, `reset`
+- Telemetrie-, Status- und State-Updates gehen als Tupel in die `gui`-Queue, z. B. `("status", text)`
 
-## 3. **Connection**
-MAVLink-Verbindung zu PX4 über Port #0 (`udp:0.0.0.0:14550`).
-
-Aufgaben:
-
-- RX-Thread: HEARTBEAT, GLOBAL_POSITION_INT, HOME_POSITION, COMMAND_ACK → Model  
-- STATUSTEXT → PX4-Log  
-- alle übrigen Nachrichten (und COMMAND_ACK) → Dispatcher → MicroServices  
-- GCS-Heartbeat-Thread (1 Hz)  
-
-Signatur:
+## Connection + Dispatcher
 
 ```python
 dispatcher = Dispatcher(model)
 connection = Connection(model, dispatcher)
-connection.connect()
+connection.connect()          # bindet udp:0.0.0.0:14550, startet die Threads
 ```
+
+Der Dispatcher ruft `on_message(msg_type, msg)` auf `model.mission_ms`, `upload_ms`, `home_ms`,
+`takeoff` und `param_sync` auf, sofern vorhanden. Fehler eines Services stoppen die anderen nicht.
+
+## MicroServices
+
+Nicht-blockierend mit `start()` / `tick()` / `on_message()` und den Flags `done` / `error`:
+
+| Model-Attribut | Klasse | Datei |
+|---|---|---|
+| `model.takeoff` | `TakeoffMicroService` | `microservices/takeoff_ms.py` |
+| `model.upload_ms` | `UploadMicroService` | `microservices/upload_ms.py` |
+| `model.home_ms` | `HomeMicroService` | `microservices/home_ms.py` |
+| `model.reset` | `ResetMicroService` | `microservices/reset_microservice.py` |
+
+Zusätzlich erzeugt der Connect-Thread nach dem ersten PX4-Heartbeat einen synchronen
+`MissionMicroService` (`communication/microservices/mission_microservice.py`, `upload()` / `download()`).
 
 ---
 
-## 4. **MainStateMachine**
-Globale System‑FSM, die den Gesamtzustand des Systems abbildet.
+# 🧩 FSM-Architektur
 
-- nutzt `model`  
-- nutzt `connection`  
-- wird von allen Sub‑FSMs referenziert  
+## Basisklassen
 
-Signatur:
+| Klasse | Datei | Rolle |
+|---|---|---|
+| `Base` | `states/base.py` | Lifecycle: `on_update()` ruft `_on_enter()` einmal, dann `_on_during()`, dann `_on_exit()` → nächster Zustand |
+| `BaseFSM` | `states/base_fsm.py` | Basis der Sub-FSMs |
+| `BaseHFSM` | `states/base_hfsm.py` | Basis der HFSMs, setzt `model.hfsm_main` |
+
+Regeln: `on_update()` darf nicht überschrieben werden (wird von `Base` erzwungen).
+`_on_during()` sammelt nur Informationen, Zustandswechsel entscheidet ausschließlich `_on_exit()`.
+
+## MainController
 
 ```python
-MainStateMachine(model, connection)
+MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 ```
 
+- startet in `STARTUP`, tickt pro `on_update()` genau die aktive HFSM
+- erzeugt bei jedem Wechsel eine **neue** HFSM-Instanz
+- globale Events vor jedem Tick: `TAKEOFF_DONE` → AIRBORNE, `RESET` → RESET,
+  `RESET_DONE` bzw. `model.reset_done` → STARTUP
+
+## High-Level-FSMs (`MainState`)
+
+| Zustand | Klasse | Verhalten |
+|---|---|---|
+| `STARTUP` | `StartupHFSM` | Enter: `PX4SwarmStarter(model.vehicle_configs).start_all()` (oder vorhandenen `model.startup_controller` wiederverwenden). → `READY`, sobald `connection_ready()` und `heartbeat_ok()` |
+| `READY` | `ReadyHFSM` | Enter: `hfsm_events` leeren. Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET. Nach 5 s Schonfrist: Verbindung verloren → RESET |
+| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `RESET` → RESET, Verbindung verloren → RESET |
+| `MISSION` | `MissionHFSM` | `BACK` / `MISSION_BACK` → READY (wird derzeit von keinem Zustand angesteuert) |
+| `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, `reset_done=True` → STARTUP |
+| `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
+
+```
+STARTUP ──Heartbeat──► READY ──TAKEOFF──► AIRBORNE
+   ▲                     │                    │
+   │                  RESET / Verbindung verloren
+   └──── reset_done ──── RESET ◄──────────────┘
+```
+
+## Sub-FSMs
+
+Unter `states/<zustand>/subfsms/` mit `*_substate.py` und `*_state_map.py` existieren Sub-FSMs
+(z. B. `StartupHeartbeatFSM`, `ReadyIdleFSM`, `ReadyTakeoffFSM`). Sie sind getestet, werden von den
+HFSMs aber **derzeit nicht verwendet** – die HFSMs arbeiten ohne Substates.
+
 ---
 
-# 🧩 FSM‑Architektur
-
-Das System besteht aus vier High‑Level‑FSMs (HFSMs):
-
-1. **StartupHFSM**
-2. **ReadyHFSM**
-3. **TakeoffHFSM**
-4. **MissionHFSM**
-
-Jede HFSM ist **komplett unabhängig** und wird vom Dispatcher verwaltet.
-
----
-
-## 4.1 StartupHFSM
-
-Hierarchische FSM mit drei Sub‑FSMs:
-
-- `StartupInitFSM`
-- `StartupWaitFSM`
-- `StartupReadyFSM`
-
-Jede Sub‑FSM hat die Signatur:
+# 🖥️ GUI-Architektur
 
 ```python
-SubFSM(model, system_sm, connection)
+GUIController(model, state_machine=main_controller, main_window, queue_registry)
+MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry)
 ```
 
-StartupHFSM selbst ist eine reine Kompositions‑FSM:
-
-```python
-StartupHFSM(init_fsm, wait_fsm, ready_fsm)
-```
+- `MainWindow` (ttk.Frame): Notebook mit `HomeTab`, `MissionTab`, `LogTab` + `StatusBar`
+- Buttons rufen `GUIController.handle_button_event(name)` auf; erlaubte Events
+  (`VALID_BUTTON_EVENTS`): `TAKEOFF`, `LAND`, `MISSION_START`, `MISSION_UPLOAD`,
+  `MISSION_DOWNLOAD`, `MISSION_VALIDATE`, `MISSION_STOP`, `RESET`, `STOP` → `model.hfsm_events`
+- `gui_tick()` (alle 500 ms): PX4-/Sim-/QGCR-Logs → `LogTab`, Model → `StatusBar`
+  (HFSM, Sub-State, Mode, Armed, Heartbeat-Zähler, Spinner)
+- Tab-Wechsel ist eine reine GUI-Operation (`TabRouter` ohne Wirkung)
 
 ---
 
-## 4.2 ReadyHFSM
+# 🚀 Initialisierungsreihenfolge (`main.py`, `Application.__init__`)
 
-Die Ready‑FSM ist **eigenständig** und besitzt **keine Sub‑FSMs mit Model/Connection**.
-
-Sie besteht aus zwei internen Substates:
-
-- `IDLE`
-- `ARMED`
-
-Signatur:
-
-```python
-ReadyHFSM()
-```
-
----
-
-## 4.3 TakeoffHFSM
-
-Besteht aus zwei Sub‑FSMs:
-
-- `TakeoffActiveFSM`
-- `TakeoffExitFSM`
-
-Beide Sub‑FSMs haben die Signatur:
-
-```python
-SubFSM(model, system_sm, connection)
-```
-
-HFSM‑Signatur:
-
-```python
-TakeoffHFSM(active_fsm, exit_fsm)
-```
+1. `StartupCleanup.run_full_cleanup()`
+2. `root = tk.Tk()`
+3. `queue_registry = QueueRegistry()`, `model = Model(queue_registry)`
+4. `model.vehicle_configs = [PX4InstanceConfig(px4_dir=$PX4_DIR, model_name="gz_rc_cessna", instance_id=1)]`
+5. `model.log = LogRouter(model, queue_registry)`
+6. `dispatcher = Dispatcher(model)`, `connection = Connection(model, dispatcher)`, `model.connection = connection`
+7. MicroServices + `MicroServiceController(model)`
+8. `main_controller = MainController(model, MAIN_STATE_MAP)`
+9. `gui_controller = GUIController(...)`, `window = MainWindow(...)`, GUI-Tick starten
+10. Threads: Update-Loop (20 Hz) und Connect-Loop (`connection.connect()`, auf Heartbeat warten,
+    `MissionMicroService` anlegen)
+11. `root.mainloop()`
 
 ---
 
-## 4.4 MissionHFSM
+# 📁 Nicht verwendete Module (Altbestand)
 
-Besteht aus einer Sub‑FSM:
+Von `main.py` aus nicht erreichbar:
 
-- `MissionStateMachine`
-
-Signatur:
-
-```python
-MissionStateMachine(model, system_sm, connection)
-MissionHFSM(mission_subfsm)
-```
-
----
-
-# 🔀 Dispatcher
-
-Der Dispatcher hält Referenzen auf **alle vier HFSMs** und entscheidet:
-
-- welche FSM aktiv ist  
-- welche FSM Heartbeat‑Events erhält  
-- welche FSM Default‑Events (z. B. MAVLink‑Messages) erhält  
-
-Signatur:
-
-```python
-Dispatcher(startup_sm, ready_sm, takeoff_sm, mission_sm)
-```
+- `states/*/subfsms/`, `states/*/*_state_map.py`, `states/*/*_substate.py` (siehe Sub-FSMs)
+- `states/base_state*.py`, `states/*state_machine*.py`, `states/queue_enabled_*.py`, `states/state_machine_controller.py`
+- `core/states/`, `sim/startup.py`
+- `communication/heartbeat_monitor.py`, `communication/qgc_*.py`, alle `communication/microservices/*`
+  außer `mission_microservice.py`
+- `model/mission_parser.py`, `model/qgc_model_router.py`
+- `view/gis/` (tkintermapview), `view/gui_event_loop.py`, `view/gui_interface.py`, `view/button_policy.py`,
+  `view/telemetry_view.py`, `view/tab_router.py`
 
 ---
-
-# 🖥️ GUI‑Architektur
-
-Die GUI besteht aus:
-
-- `MainWindow`  
-- `GUIController`  
-- `MissionTab`  
-- weiteren modularen GUI‑Elementen  
-
-Der GUIController verbindet:
-
-- Model  
-- aktive FSM (initial: ReadyHFSM)  
-- Dispatcher  
-
-Signatur:
-
-```python
-GUIController(model, active_fsm, dispatcher)
-```
-
----
-
-# 🚀 Initialisierungsreihenfolge (wichtig!)
-
-Die Reihenfolge ist **zwingend**, da jede Schicht die darunterliegende benötigt:
-
-1. `model = Model()`
-2. `heartbeat_monitor = HeartbeatMonitor()`
-3. `dispatcher = Dispatcher(model)`, `connection = Connection(model, dispatcher)`
-4. `system_sm = MainStateMachine(model, connection)`
-5. Sub‑FSMs erzeugen (Startup, Takeoff, Mission)
-6. HFSMs zusammensetzen
-7. `ready_sm = ReadyHFSM()`
-8. *(entfällt – Dispatcher wird in Schritt 3 erzeugt)*
-9. `controller = GUIController(model, ready_sm, dispatcher)`
-10. `MainWindow(controller).mainloop()`
-
----
-
-# 📌 Zusammenfassung
-
-Diese Architektur trennt:
-
-- **Kommunikation**
-- **Systemzustand**
-- **High‑Level‑FSMs**
-- **Sub‑FSMs**
-- **GUI‑Logik**
-
-klar voneinander und ermöglicht:
-
-- deterministische Abläufe  
-- saubere Testbarkeit  
-- modulare Erweiterbarkeit  
-- robuste Fehlerbehandlung  
-
----
-
-
-Die neue Architektur ist:
-
-Ebene	Typ	Vererbung	Input	Output
-Sub‑FSM	INIT, WAIT, READY, IDLE, ARMED, ACTIVE, EXIT, MISSION_IDLE	BaseFSM	(msg_type, msg)	Events → model.event_queue
-HFSM	StartupHFSM, ReadyHFSM, TakeoffHFSM, MissionHFSM	keine Vererbung	Events aus model.event_queue	Sub‑FSM‑Wechsel
-
-
-
-
-GUI                  Model.queue_state          BaseMachineController          StartupHFSM                StartupSubFSMs
- |                           |                           |                           |                           |
- |--- (User opens GUI) ----->|                           |                           |                           |
- |                           |                           |                           |                           |
- |--- GUI_TAKEOFF_BUTTON --->|                           |                           |                           |
- |                           |--- Event(GUI_TAKEOFF) --->|                           |                           |
- |                           |                           |--- process_event() ------>|                           |
- |                           |                           |                           |--- handle_event() ------->|
- |                           |                           |                           |   (ignored in STARTUP)    |
- |                           |                           |                           |<--------------------------|
- |                           |                           |<-- remains STARTUP -------|                           |
- |                           |                           |                           |                           |
- |                           |                           |--- step() --------------->|                           |
- |                           |                           |                           |--- on_update() ---------->|
- |                           |                           |                           |   (calls subcontroller)   |
- |                           |                           |                           |                           |
- |                           |                           |                           |--- sub.step() ----------->|
- |                           |                           |                           |                           |
- |                           |                           |                           |<-- SubState.HEARTBEAT ----|
- |                           |                           |<-- MainState.STARTUP ---|                           |
- |                           |                           |                           |                           |
- |                           |                           |                           |                           |
-PX4 Thread                   |                           |                           |                           |
- |--- PX4_HEARTBEAT -------->|                           |                           |                           |
- |                           |--- Event(PX4_HEARTBEAT) ->|                           |                           |
- |                           |                           |--- process_event() ------>|                           |
- |                           |                           |                           |--- handle_event() ------->|
- |                           |                           |                           |   sub.inject_event()      |
- |                           |                           |                           |                           |
- |                           |                           |                           |--- sub.handle_event() --->|
- |                           |                           |                           |   returns STARTUP_PARAMS  |
- |                           |                           |                           |<--------------------------|
- |                           |                           |<-- remains STARTUP -------|                           |
- |                           |                           |                           |                           |
- |                           |                           |--- step() --------------->|                           |
- |                           |                           |                           |--- on_update() ---------->|
- |                           |                           |                           |   sees substate=PARAMS    |
- |                           |                           |                           |                           |
- |                           |                           |<-- MainState.STARTUP ---|                           |
- |                           |                           |                           |                           |
- |                           |                           |                           |                           |
-PX4 Thread                   |                           |                           |                           |
- |--- PX4_PARAM_SYNC_DONE -->|                           |                           |                           |
- |                           |--- Event(PARAM_SYNC) ---->|                           |                           |
- |                           |                           |--- process_event() ------>|                           |
- |                           |                           |                           |--- handle_event() ------->|
- |                           |                           |                           |   sub.inject_event()      |
- |                           |                           |                           |                           |
- |                           |                           |                           |--- sub.handle_event() --->|
- |                           |                           |                           |   returns STARTUP_HOME    |
- |                           |                           |                           |<--------------------------|
- |                           |                           |<-- remains STARTUP -------|                           |
- |                           |                           |                           |                           |
- |                           |                           |--- step() --------------->|                           |
- |                           |                           |                           |--- on_update() ---------->|
- |                           |                           |                           |   sees substate=HOME      |
- |                           |                           |                           |                           |
- |                           |                           |<-- MainState.STARTUP ---|                           |
- |                           |                           |                           |                           |
-PX4 Thread                   |                           |                           |                           |
- |--- PX4_HOME_SET --------->|                           |                           |                           |
- |                           |--- Event(HOME_SET) ------>|                           |                           |
- |                           |                           |--- process_event() ------>|                           |
- |                           |                           |                           |--- handle_event() ------->|
- |                           |                           |                           |   sub.inject_event()      |
- |                           |                           |                           |                           |
- |                           |                           |                           |--- sub.handle_event() --->|
- |                           |                           |                           |   returns STARTUP_OK      |
- |                           |                           |                           |<--------------------------|
- |                           |                           |<-- remains STARTUP -------|                           |
- |                           |                           |                           |                           |
- |                           |                           |--- step() --------------->|                           |
- |                           |                           |                           |--- on_update() ---------->|
- |                           |                           |                           |   sees substate=OK        |
- |                           |                           |                           |   startup_ok=True         |
- |                           |                           |                           |--- on_exit() ------------>|
- |                           |                           |                           |   returns READY           |
- |                           |                           |<-- MainState.READY -----|                           |
- |                           |                           |                           |                           |
- |                           |                           |--- transition(READY) ---->|                           |
- |                           |                           |                           |                           |
- |                           |                           |                           |                           |
- |                           |                           |                           |                           |
- |                           |                           |--- step() ---------------> ReadyHFSM                  |
- |                           |                           |                           |--- on_update() ---------->|
- |                           |                           |                           |   (Ready logic)           |
- |                           |                           |<-- MainState.READY -----|                           |
- |                           |                           |                           |                           |
-
-
 
 
 <!--
