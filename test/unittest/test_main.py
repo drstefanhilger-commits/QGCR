@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from QGCR.main import Application
+from QGCR.main import Application, parse_args
 from QGCR.model.model import MissionData
 from QGCR.communication.microservices.mission_microservice import MissionMicroService
 from QGCR.test.unittest.dummy_model import DummyModel
@@ -56,6 +56,39 @@ class TestMainConnectLoop(unittest.TestCase):
         gui = GUIController(self.model, None, None, self.model.queue_registry)
 
         self.assertEqual(gui.get_mission_view_data()["mission_text"], "Mission: -")
+
+
+class TestMainParseArgs(unittest.TestCase):
+
+    def test_default_model(self):
+        self.assertEqual(parse_args([]).model, "gz_rc_cessna")
+
+    def test_vtol_model(self):
+        self.assertEqual(parse_args(["--model", "gz_fsl_rocket_vtol"]).model, "gz_fsl_rocket_vtol")
+
+    @patch("sys.stderr")
+    def test_unknown_model_rejected(self, _stderr):
+        with self.assertRaises(SystemExit):
+            parse_args(["--model", "gz_x500"])
+
+
+class TestMainApplicationModel(unittest.TestCase):
+
+    @patch("builtins.print")
+    @patch("QGCR.main.threading.Thread")
+    @patch("QGCR.main.StartupCleanup")
+    def test_model_name_goes_into_vehicle_config(self, cleanup, _thread, _print):
+        app = Application(model_name="gz_fsl_rocket_vtol")
+        try:
+            self.assertEqual([c.model_name for c in app.model.vehicle_configs], ["gz_fsl_rocket_vtol"])
+        finally:
+            app.root.destroy()
+
+    @patch("QGCR.main.StartupCleanup")
+    def test_unknown_model_raises_before_cleanup(self, cleanup):
+        with self.assertRaises(ValueError):
+            Application(model_name="gz_x500")
+        cleanup.run_full_cleanup.assert_not_called()
 
 
 class TestMainApplicationInit(unittest.TestCase):

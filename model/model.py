@@ -62,6 +62,13 @@ class Model:
         8: "RATTITUDE",
     }
 
+    # Auswählbare PX4/Gazebo-Modelle (make px4_sitl <name>)
+    ALLOWED_MODELS = [
+        "gz_rc_cessna",
+        "gz_fsl_rocket_vtol",
+    ]
+    DEFAULT_MODEL = "gz_rc_cessna"
+
     def __init__(self, queue_registry):
         self.queue_registry = queue_registry
         self.connection = None
@@ -78,11 +85,7 @@ class Model:
 
         # Liste erlaubter PX4/Gazebo-Modelle
         # Diese Liste wird vom Swarm-Starter validiert.
-        self.allowed_models = [
-            "gz_rc_cessna",
-            "gz_x500",
-            "gz_standard_vtol",
-        ]
+        self.allowed_models = list(self.ALLOWED_MODELS)
 
         # Modellname des aktiven Fahrzeugs (Single-PX4)
         # Wird vom px4_swarm_starter gesetzt.
@@ -98,6 +101,7 @@ class Model:
         self.px4_connected = False
         self.px4_last_heartbeat = 0.0
         self.px4_heartbeat_count = 0
+        self.px4_vehicle_type = None      # MAV_TYPE aus dem PX4-Heartbeat
         self._lost_counter = 0
 
         # Telemetrie
@@ -186,6 +190,7 @@ class Model:
 
         self._lost_counter = 0
         self.px4_connected = True
+        self.px4_vehicle_type = getattr(msg, "type", None)
 
         try:
             self.queue_registry.require("gui").push(("telemetry", {
@@ -197,6 +202,17 @@ class Model:
             }))
         except Exception:
             pass
+
+    def reset_heartbeat(self):
+        """
+        Heartbeat-Status verwerfen (RESET / Modellwechsel):
+        STARTUP wartet danach auf den Heartbeat der NEUEN PX4-Instanz.
+        """
+        self.px4_connected = False
+        self.px4_last_heartbeat = 0.0
+        self.px4_heartbeat_count = 0
+        self.px4_vehicle_type = None
+        self._lost_counter = 0
 
     # ------------------------------------------------------------
     # TIMEOUT

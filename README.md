@@ -56,6 +56,16 @@ Start (aus `~/projects`, da alle Imports `QGCR.*` sind):
 python3 -m QGCR.main
 ```
 
+Modell wählen (Standard `gz_rc_cessna`), z. B. die FSL Rocket VTOL:
+
+```bash
+python3 -m QGCR.main --model gz_fsl_rocket_vtol
+```
+
+Im Betrieb kann das Modell im HomeTab (Auswahlliste „Modell“) gewechselt werden: QGCR löst RESET aus,
+beendet PX4 und startet es in STARTUP mit dem neuen Modell neu. Im Flug (AIRBORNE) und während RESET
+ist die Auswahl gesperrt. Erlaubte Modelle: `Model.ALLOWED_MODELS`.
+
 PX4 liegt standardmaessig unter `~/PX4-Autopilot`, sonst `export PX4_DIR=/pfad/zu/PX4-Autopilot`.
 
 Tests (aus `~/projects`):
@@ -197,7 +207,7 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 | `READY` | `ReadyHFSM` | Enter: `hfsm_events` leeren. Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, Mission-Tab aktiv (`model.active_tab`) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
 | `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `RESET` → RESET, Verbindung verloren → RESET |
 | `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
-| `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, `reset_done=True` → STARTUP |
+| `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, Heartbeat-Status verwerfen (`model.reset_heartbeat()`), `reset_done=True` → STARTUP |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
 
 ```
@@ -252,7 +262,7 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
 1. `StartupCleanup.run_full_cleanup()`
 2. `root = tk.Tk()`
 3. `queue_registry = QueueRegistry()`, `model = Model(queue_registry)`
-4. `model.vehicle_configs = [PX4InstanceConfig(px4_dir=$PX4_DIR, model_name="gz_rc_cessna", instance_id=1)]`
+4. `model.vehicle_configs = [PX4InstanceConfig(px4_dir=$PX4_DIR, model_name=--model, instance_id=1)]`
 5. `model.log = LogRouter(model, queue_registry)`
 6. `dispatcher = Dispatcher(model)`, `connection = Connection(model, dispatcher)`, `model.connection = connection`
 7. MicroServices + `MicroServiceController(model)`

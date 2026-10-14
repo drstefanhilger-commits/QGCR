@@ -7,7 +7,7 @@ from tkinter import ttk
 class HomeTab(ttk.Frame):
     """
     Home-Tab mit:
-    - Button-Leiste (Arm, Disarm, Takeoff, Land, Reset)
+    - Button-Leiste (Arm, Disarm, Takeoff, Land, Reset) + Modellauswahl
     - Canvas (Map/Plot Platzhalter)
     """
 
@@ -56,6 +56,20 @@ class HomeTab(ttk.Frame):
         )
         self.reset_button.pack(side=tk.LEFT, padx=5)
 
+        # Modellauswahl (Wechsel löst RESET aus)
+        choices = self.controller.get_model_choices() if self.controller else []
+        self.model_var = tk.StringVar()
+        self.model_combo = ttk.Combobox(
+            frame, textvariable=self.model_var, values=choices,
+            state="readonly", width=22
+        )
+        self.model_combo.pack(side=tk.RIGHT, padx=5)
+        ttk.Label(frame, text="Modell:").pack(side=tk.RIGHT)
+        self.model_combo.bind("<<ComboboxSelected>>", self._on_model_selected)
+
+        if self.controller:
+            self.model_var.set(self.controller.get_selected_model() or "")
+
     # ------------------------------------------------------------
     # Canvas
     # ------------------------------------------------------------
@@ -93,3 +107,16 @@ class HomeTab(ttk.Frame):
 
     def set_reset_enabled(self, enabled: bool):
         self.reset_button.configure(state="normal" if enabled else "disabled")
+
+    # ------------------------------------------------------------
+    # Modellauswahl
+    # ------------------------------------------------------------
+    def _on_model_selected(self, _event=None):
+        if self.controller:
+            self.controller.request_model_change(self.model_var.get())
+
+    def set_model(self, model_name, enabled=True):
+        """Aktuelles Modell anzeigen; Auswahl im Flug/RESET sperren."""
+        if model_name and self.model_var.get() != model_name:
+            self.model_var.set(model_name)
+        self.model_combo.configure(state="readonly" if enabled else "disabled")

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 from QGCR.controller.gui_controller import GUIController
 from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.test.unittest.plan_fixture import write_plan
+from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
 
 
 class TestControllerGUIController(unittest.TestCase):
@@ -155,6 +156,60 @@ class TestControllerGUIControllerMission(unittest.TestCase):
                 self.gui.update_mission_tab()
                 window.mission_tab.set_enabled.assert_called_once_with(
                     upload=False, download=False, stop=False)
+
+
+@patch("builtins.print")
+class TestControllerGUIControllerModel(unittest.TestCase):
+
+    def setUp(self):
+        self.model = DummyModel()
+        self.model.hfsm_main = "READY"
+        self.model.vehicle_configs = [PX4InstanceConfig("/opt/px4", "gz_rc_cessna", 1, verbose=False)]
+        self.gui = GUIController(self.model, None, None, self.model.queue_registry)
+
+    def test_choices_and_selected(self, _print):
+        self.assertEqual(self.gui.get_model_choices(), ["gz_rc_cessna", "gz_fsl_rocket_vtol"])
+        self.assertEqual(self.gui.get_selected_model(), "gz_rc_cessna")
+
+    def test_change_updates_config_and_triggers_reset(self, _print):
+        self.assertTrue(self.gui.request_model_change("gz_fsl_rocket_vtol"))
+
+        cfg = self.model.vehicle_configs[0]
+        self.assertEqual((cfg.model_name, cfg.px4_dir, cfg.instance_id),
+                         ("gz_fsl_rocket_vtol", "/opt/px4", 1))
+        self.assertEqual(list(self.model.hfsm_events), ["RESET"])
+
+    def test_change_allowed_in_startup_ready_mission(self, _print):
+        for state in ("STARTUP", "READY", "MISSION"):
+            with self.subTest(state=state):
+                self.model.vehicle_configs[0].model_name = "gz_rc_cessna"
+                self.model.hfsm_events.clear()
+                self.model.hfsm_main = state
+                self.assertTrue(self.gui.request_model_change("gz_fsl_rocket_vtol"))
+
+    def test_change_blocked_in_flight_and_reset(self, _print):
+        for state in ("AIRBORNE", "RESET"):
+            with self.subTest(state=state):
+                self.model.hfsm_main = state
+                self.assertFalse(self.gui.request_model_change("gz_fsl_rocket_vtol"))
+                self.assertEqual(self.gui.get_selected_model(), "gz_rc_cessna")
+                self.assertEqual(len(self.model.hfsm_events), 0)
+
+    def test_same_or_unknown_model_ignored(self, _print):
+        self.assertFalse(self.gui.request_model_change("gz_rc_cessna"))
+        self.assertFalse(self.gui.request_model_change("gz_x500"))
+        self.assertEqual(len(self.model.hfsm_events), 0)
+
+    def test_update_model_selector(self, _print):
+        window = MagicMock()
+        self.gui.main_window = window
+
+        self.gui.update_model_selector()
+        window.home_tab.set_model.assert_called_with("gz_rc_cessna", enabled=True)
+
+        self.model.hfsm_main = "AIRBORNE"
+        self.gui.update_model_selector()
+        window.home_tab.set_model.assert_called_with("gz_rc_cessna", enabled=False)
 
 
 if __name__ == "__main__":

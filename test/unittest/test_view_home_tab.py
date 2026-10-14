@@ -1,5 +1,6 @@
 import unittest
 import tkinter as tk
+from unittest.mock import MagicMock
 
 from QGCR.view.home_tab import HomeTab
 
@@ -58,6 +59,42 @@ class TestViewHomeTab(unittest.TestCase):
 
         items = self.tab.canvas.find_all()
         self.assertEqual(len(items), 1)
+
+
+class TestViewHomeTabModelSelector(unittest.TestCase):
+
+    def setUp(self):
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.ctrl = MagicMock()
+        self.ctrl.get_model_choices.return_value = ["gz_rc_cessna", "gz_fsl_rocket_vtol"]
+        self.ctrl.get_selected_model.return_value = "gz_rc_cessna"
+        self.tab = HomeTab(self.root, controller=self.ctrl)
+
+    def tearDown(self):
+        self.tab.destroy()
+        self.root.destroy()
+
+    def test_shows_choices_and_current_model(self):
+        self.assertEqual(list(self.tab.model_combo["values"]), ["gz_rc_cessna", "gz_fsl_rocket_vtol"])
+        self.assertEqual(self.tab.model_var.get(), "gz_rc_cessna")
+        self.assertEqual(str(self.tab.model_combo["state"]), "readonly")
+
+    def test_selection_requests_model_change(self):
+        self.tab.model_combo.current(1)
+        self.tab.model_combo.event_generate("<<ComboboxSelected>>")
+        self.root.update()
+
+        self.ctrl.request_model_change.assert_called_once_with("gz_fsl_rocket_vtol")
+
+    def test_set_model(self):
+        self.tab.set_model("gz_fsl_rocket_vtol", enabled=False)
+
+        self.assertEqual(self.tab.model_var.get(), "gz_fsl_rocket_vtol")
+        self.assertEqual(str(self.tab.model_combo["state"]), "disabled")
+
+        self.tab.set_model("gz_fsl_rocket_vtol", enabled=True)
+        self.assertEqual(str(self.tab.model_combo["state"]), "readonly")
 
 
 if __name__ == "__main__":

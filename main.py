@@ -2,6 +2,7 @@
 
 import threading
 import time
+import argparse
 import os
 import traceback
 import tkinter as tk
@@ -26,9 +27,22 @@ from QGCR.core.startup_cleanup import StartupCleanup
 from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
 
 
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(prog="python3 -m QGCR.main", description="QGC Replacement")
+    parser.add_argument(
+        "--model",
+        choices=Model.ALLOWED_MODELS,
+        default=Model.DEFAULT_MODEL,
+        help=f"PX4/Gazebo-Modell (Standard: {Model.DEFAULT_MODEL})",
+    )
+    return parser.parse_args(argv)
+
+
 class Application:
 
-    def __init__(self):
+    def __init__(self, model_name=Model.DEFAULT_MODEL):
+        if model_name not in Model.ALLOWED_MODELS:
+            raise ValueError(f"Unbekanntes Modell '{model_name}', erlaubt: {Model.ALLOWED_MODELS}")
 
         # ------------------------------------------------------------
         # Startup Cleanup (ALLE Ports + Prozesse + SHM)
@@ -58,7 +72,7 @@ class Application:
         self.model.vehicle_configs = [
             PX4InstanceConfig(
                 px4_dir=os.environ.get("PX4_DIR", "~/PX4-Autopilot"),
-                model_name="gz_rc_cessna",
+                model_name=model_name,
                 instance_id=1,
             )
         ]
@@ -177,5 +191,6 @@ class Application:
 
 
 if __name__ == "__main__":
-    app = Application()
+    args = parse_args()
+    app = Application(model_name=args.model)
     app.root.mainloop()

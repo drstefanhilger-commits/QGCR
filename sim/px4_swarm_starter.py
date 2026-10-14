@@ -165,7 +165,7 @@ class PX4SwarmStarter:
 
         for name in gazebo_names:
             try:
-                subprocess.run(["pkill", "-9", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["pkill", "-9", "-x", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 print(f"[PX4SwarmStarter] killed leftover Gazebo process: {name}")
             except Exception:
                 pass

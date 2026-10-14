@@ -3,6 +3,7 @@
 import os
 
 from QGCR.model.mission_parser import load_qgc_plan
+from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
 
 
 class GUIController:
@@ -136,6 +137,55 @@ class GUIController:
     def push_log(self, text: str):
         # QGCR-interne Logs gehen in den QGCR-Log-Channel
         self.model.log.qgcr(text)
+
+    # ------------------------------------------------------------
+    # Modellauswahl (HomeTab)
+    # ------------------------------------------------------------
+    # Im Flug / während eines laufenden RESET kein Modellwechsel
+    MODEL_CHANGE_BLOCKED = ("AIRBORNE", "RESET")
+
+    def get_model_choices(self):
+        return list(self.model.allowed_models)
+
+    def get_selected_model(self):
+        configs = getattr(self.model, "vehicle_configs", None) or []
+        return configs[0].model_name if configs else None
+
+    def can_change_model(self):
+        return self.model.hfsm_main not in self.MODEL_CHANGE_BLOCKED
+
+    def request_model_change(self, model_name):
+        """
+        Neues Modell in vehicle_configs eintragen und RESET auslösen:
+        RESET stoppt PX4, STARTUP startet es mit dem neuen Modell.
+        """
+        if model_name not in self.model.allowed_models:
+            self.model.log.qgcr(f"[GUIController] Unbekanntes Modell '{model_name}' ignoriert")
+            return False
+
+        if model_name == self.get_selected_model():
+            return False
+
+        if not self.can_change_model():
+            self.model.log.qgcr(
+                f"[GUIController] Modellwechsel in {self.model.hfsm_main} nicht erlaubt"
+            )
+            return False
+
+        old = self.model.vehicle_configs[0]
+        self.model.vehicle_configs = [
+            PX4InstanceConfig(old.px4_dir, model_name, old.instance_id, old.verbose)
+        ]
+        self.model.log.qgcr(f"[GUIController] Modellwechsel → {model_name} (RESET)")
+        self.handle_button_event("RESET")
+        return True
+
+    def update_model_selector(self):
+        """Auswahlliste im HomeTab aktualisieren (aus gui_tick)."""
+        home = getattr(self.main_window, "home_tab", None) if self.main_window else None
+        if home is None or not hasattr(home, "set_model"):
+            return
+        home.set_model(self.get_selected_model(), enabled=self.can_change_model())
 
     # ------------------------------------------------------------
     # GUI-Queue → Anzeige (aus gui_tick, Tk-Thread)
@@ -305,6 +355,9 @@ class GUIController:
 
         # MissionTab (Buttons, Mission, Status)
         self.update_mission_tab()
+
+        # HomeTab (Modellauswahl)
+        self.update_model_selector()
 
         if self.root:
             self.root.after(500, self.gui_tick)
