@@ -103,6 +103,40 @@ class TestMainApplicationInit(unittest.TestCase):
 
         takeoff.on_message.assert_called_once_with("COMMAND_ACK", msg)
 
+    @patch("builtins.print")
+    @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
+    def test_mission_tab_switches_ready_mission_ready(self, _starter, _print):
+        from QGCR.states.main_state import MainState
+
+        ctrl = self.app.main_controller
+        model = self.app.model
+        model.px4_connected = True
+        model.px4_heartbeat_count = 1
+
+        ctrl.on_update()                       # STARTUP → READY
+        self.assertEqual(ctrl.active_state, MainState.READY)
+        ctrl.on_update()                       # READY: enter
+
+        self.select_tab("Mission")
+        ctrl.on_update()
+        self.assertEqual(ctrl.active_state, MainState.MISSION)
+        ctrl.on_update()                       # MISSION: enter
+
+        self.select_tab("Log")
+        ctrl.on_update()
+        self.assertEqual(ctrl.active_state, MainState.MISSION)
+
+        self.select_tab("Home")
+        ctrl.on_update()
+        self.assertEqual(ctrl.active_state, MainState.READY)
+
+    def select_tab(self, text):
+        nb = self.app.window.notebook
+        for tab_id in nb.tabs():
+            if nb.tab(tab_id, "text") == text:
+                nb.select(tab_id)
+        self.app.root.update()
+
 
 if __name__ == "__main__":
     unittest.main()

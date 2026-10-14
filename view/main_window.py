@@ -44,8 +44,28 @@ class MainWindow(ttk.Frame):
         self.notebook.add(self.mission_tab, text="Mission")
         self.notebook.add(self.log_tab, text="Log")
 
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
         # ------------------------------------------------------------
         # StatusBar (unten)
         # ------------------------------------------------------------
         self.status_bar = StatusBar(self, controller=self.controller)
         self.status_bar.grid(row=1, column=0, sticky="ew")
+
+    # ------------------------------------------------------------
+    # Tab-Wechsel → Controller
+    # ------------------------------------------------------------
+    def _on_tab_changed(self, _event=None):
+        if self.controller is None:
+            return
+
+        tab_name = self.notebook.tab(self.notebook.select(), "text")
+        self.controller.on_tab_changed(tab_name)
+
+        match tab_name:
+            case "Mission":
+                self.controller.on_tab_mission()
+            case "Home":
+                self.controller.on_tab_home()
+            case _:
+                pass

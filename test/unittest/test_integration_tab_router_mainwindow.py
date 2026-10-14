@@ -10,8 +10,8 @@ from QGCR.view.tab_router import TabRouter
 
 class TestIntegrationTabRouterMainWindow(unittest.TestCase):
     """
-    Tab-Wechsel ist in der aktuellen Architektur eine reine GUI-Operation:
-    MainWindow baut Home/Mission/Log + StatusBar, der TabRouter löst nichts aus.
+    MainWindow baut Home/Mission/Log + StatusBar und meldet Tab-Wechsel an den Controller.
+    Der TabRouter löst nichts aus.
     """
 
     def setUp(self):
@@ -32,7 +32,7 @@ class TestIntegrationTabRouterMainWindow(unittest.TestCase):
             if notebook.tab(tab_id, "text") == tab_text:
                 notebook.select(tab_id)
                 break
-        self.gui.update_idletasks()
+        self.gui.update()
         return notebook.nametowidget(notebook.select())
 
     def test_tabs_present(self):
@@ -53,9 +53,35 @@ class TestIntegrationTabRouterMainWindow(unittest.TestCase):
         self.assertIs(self.gui.status_bar.controller, self.ctrl)
 
     def test_tab_router_has_no_side_effects(self):
+        self.ctrl.reset_mock()
         router = TabRouter(self.ctrl)
         router.on_tab_changed("Mission")
         self.assertEqual(self.ctrl.method_calls, [])
+
+    def test_mission_tab_notifies_controller(self):
+        self.ctrl.reset_mock()
+        self.select_tab("Mission")
+
+        self.ctrl.on_tab_changed.assert_called_once_with("Mission")
+        self.ctrl.on_tab_mission.assert_called_once()
+        self.ctrl.on_tab_home.assert_not_called()
+
+    def test_home_tab_notifies_controller(self):
+        self.select_tab("Mission")
+        self.ctrl.reset_mock()
+        self.select_tab("Home")
+
+        self.ctrl.on_tab_changed.assert_called_once_with("Home")
+        self.ctrl.on_tab_home.assert_called_once()
+        self.ctrl.on_tab_mission.assert_not_called()
+
+    def test_log_tab_only_sets_active_tab(self):
+        self.ctrl.reset_mock()
+        self.select_tab("Log")
+
+        self.ctrl.on_tab_changed.assert_called_once_with("Log")
+        self.ctrl.on_tab_home.assert_not_called()
+        self.ctrl.on_tab_mission.assert_not_called()
 
 
 if __name__ == "__main__":

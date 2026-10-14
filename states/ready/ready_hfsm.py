@@ -45,6 +45,10 @@ class ReadyHFSM(BaseHFSM):
                     self._next_state = MainState.RESET
                     return
 
+                case "EV_GOTO_MISSION":
+                    self._next_state = MainState.MISSION
+                    return
+
                 case "ARM":
                     self._send_arm_disarm(arm=True)
 

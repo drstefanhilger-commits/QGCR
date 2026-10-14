@@ -20,10 +20,21 @@ class MissionHFSM(BaseHFSM):
         if self.model.hfsm_events:
             event = self.model.hfsm_events.popleft()
 
-            if event in ("BACK", "MISSION_BACK"):
-                self.model.log.qgcr("[MissionHFSM] BACK → READY")
-                self._next_state = MainState.READY
-                return
+            match event:
+                case "BACK" | "MISSION_BACK" | "EV_GOTO_READY":
+                    self.model.log.qgcr(f"[MissionHFSM] {event} → READY")
+                    self._next_state = MainState.READY
+                    return
+
+                case "RESET":
+                    self.model.log.qgcr("[MissionHFSM] RESET received")
+                    self._next_state = MainState.RESET
+                    return
+
+        if not self.model.connection_ready():
+            self.model.log.qgcr("[MissionHFSM] Connection lost → RESET")
+            self._next_state = MainState.RESET
+            return
 
         self._next_state = MainState.MISSION
 

@@ -43,12 +43,18 @@ class GUIController:
     # GUI → HFSM Events (Tab-Wechsel)
     # ------------------------------------------------------------
     def on_tab_home(self):
+        # Nur aus MISSION zurück – sonst bliebe das Event in hfsm_events liegen
+        if self.model.hfsm_main != "MISSION":
+            return
         try:
             self.model.hfsm_events.append("EV_GOTO_READY")
         except Exception as e:
             print("HFSM event error (HOME_TAB):", e)
 
     def on_tab_mission(self):
+        # MISSION nur aus READY (nicht im Flug)
+        if self.model.hfsm_main != "READY":
+            return
         try:
             self.model.hfsm_events.append("EV_GOTO_MISSION")
         except Exception as e:

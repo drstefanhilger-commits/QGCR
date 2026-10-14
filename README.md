@@ -189,17 +189,23 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 | Zustand | Klasse | Verhalten |
 |---|---|---|
 | `STARTUP` | `StartupHFSM` | Enter: `PX4SwarmStarter(model.vehicle_configs).start_all()` (oder vorhandenen `model.startup_controller` wiederverwenden). → `READY`, sobald `connection_ready()` und `heartbeat_ok()` |
-| `READY` | `ReadyHFSM` | Enter: `hfsm_events` leeren. Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
+| `READY` | `ReadyHFSM` | Enter: `hfsm_events` leeren. Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, `EV_GOTO_MISSION` (Mission-Tab) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
 | `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `RESET` → RESET, Verbindung verloren → RESET |
-| `MISSION` | `MissionHFSM` | `BACK` / `MISSION_BACK` → READY (wird derzeit von keinem Zustand angesteuert) |
+| `MISSION` | `MissionHFSM` | `EV_GOTO_READY` (Home-Tab) / `BACK` / `MISSION_BACK` → READY, `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, `reset_done=True` → STARTUP |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
 
 ```
-STARTUP ──Heartbeat──► READY ──TAKEOFF──► AIRBORNE
-   ▲                     │                    │
-   │                  RESET / Verbindung verloren
-   └──── reset_done ──── RESET ◄──────────────┘
+                     Mission-Tab
+                   ┌────────────► MISSION
+                   │   Home-Tab      │
+STARTUP ──HB──► READY ◄──────────────┤
+   ▲               │ TAKEOFF         │
+   │               ▼                 │
+   │           AIRBORNE              │
+   │               │                 │
+   │      RESET / Verbindung verloren (aus READY, AIRBORNE, MISSION)
+   └── reset_done ── RESET ◄─────────┘
 ```
 
 ## Sub-FSMs
@@ -223,7 +229,8 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
   `MISSION_DOWNLOAD`, `MISSION_VALIDATE`, `MISSION_STOP`, `RESET`, `STOP` → `model.hfsm_events`
 - `gui_tick()` (alle 500 ms): PX4-/Sim-/QGCR-Logs → `LogTab`, Model → `StatusBar`
   (HFSM, Sub-State, Mode, Armed, Heartbeat-Zähler, Spinner)
-- Tab-Wechsel ist eine reine GUI-Operation (`TabRouter` ohne Wirkung)
+- Tab-Wechsel (`<<NotebookTabChanged>>`) → `GUIController.on_tab_changed()`; Mission-Tab sendet
+  `EV_GOTO_MISSION` (nur in READY), Home-Tab `EV_GOTO_READY` (nur in MISSION). `TabRouter` ist ohne Wirkung
 
 ---
 

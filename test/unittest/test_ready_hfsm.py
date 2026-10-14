@@ -41,6 +41,12 @@ class TestReadyHFSM(unittest.TestCase):
 
         self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
 
+    def test_goto_mission_event_goes_mission(self):
+        self.fsm.on_update()
+        self.model.hfsm_events.append("EV_GOTO_MISSION")
+
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
     def test_reset_event_goes_reset(self):
         self.fsm.on_update()
         self.model.hfsm_events.append("RESET")

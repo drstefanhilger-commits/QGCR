@@ -26,6 +26,28 @@ class TestControllerGUIController(unittest.TestCase):
         self.gui.handle_button_event("ARMM")
         self.assertEqual(len(self.model.hfsm_events), 0)
 
+    def test_tab_mission_only_from_ready(self):
+        for state, expected in (("READY", ["EV_GOTO_MISSION"]), ("STARTUP", []),
+                                ("AIRBORNE", []), ("MISSION", [])):
+            with self.subTest(state=state):
+                self.model.hfsm_events.clear()
+                self.model.hfsm_main = state
+                self.gui.on_tab_mission()
+                self.assertEqual(list(self.model.hfsm_events), expected)
+
+    def test_tab_home_only_from_mission(self):
+        for state, expected in (("MISSION", ["EV_GOTO_READY"]), ("READY", []),
+                                ("STARTUP", []), ("AIRBORNE", [])):
+            with self.subTest(state=state):
+                self.model.hfsm_events.clear()
+                self.model.hfsm_main = state
+                self.gui.on_tab_home()
+                self.assertEqual(list(self.model.hfsm_events), expected)
+
+    def test_tab_changed_sets_active_tab(self):
+        self.gui.on_tab_changed("Log")
+        self.assertEqual(self.model.active_tab, "Log")
+
 
 if __name__ == "__main__":
     unittest.main()
