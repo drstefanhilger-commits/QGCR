@@ -1,13 +1,13 @@
 ## Environment
 - Windows 11  
 - WSL2 + WSLg  
-- Ubuntu 22.04  
+- Ubuntu 24.04 (noble)  
+- Python 3.12  
 - Intel UHD 770  
-- Mesa 22.x (OpenGL über ANGLE)  
-- Gazebo Harmonic 8.1.0
-- OGRE 1.9  
-- PX4 v1.14.4  
-- pymavlink 2.4.49 (bitte diese Signaturen in pymavlink verwenden)
+- Mesa 25.x (OpenGL ueber WSLg, ggf. `GALLIUM_DRIVER=d3d12`)  
+- Gazebo Harmonic (gz-sim 8.x)
+- PX4 v1.17.0 (`~/PX4-Autopilot`, ueberschreibbar mit `PX4_DIR`)  
+- pymavlink 2.4.50 (bitte diese Signaturen in pymavlink verwenden)
 - MAVSDK 3.15.3  
 	
 ## Vereinbarungen fuer QGC-Replacement

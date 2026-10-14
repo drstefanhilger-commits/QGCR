@@ -21,7 +21,7 @@ class TestHFSMWithPX4SITL(unittest.TestCase):
     def setUp(self):
         kill_existing_px4()
 
-        sitl_root = os.path.expanduser("~/PX4-Autopilot")
+        sitl_root = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
 
         self.px4 = subprocess.Popen(
             ["make", "px4_sitl", "gz_rc_cessna"],

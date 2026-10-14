@@ -2,6 +2,7 @@
 
 import threading
 import time
+import os
 import traceback
 import tkinter as tk
 
@@ -60,7 +61,7 @@ class Application:
         # ------------------------------------------------------------
         self.model.vehicle_configs = [
             PX4InstanceConfig(
-                px4_dir="/home/stefan/PX4_SITL/30Degrees",
+                px4_dir=os.environ.get("PX4_DIR", "~/PX4-Autopilot"),
                 model_name="gz_rc_cessna",
                 instance_id=1,
             )

@@ -13,7 +13,7 @@ from QGCR.communication.gcs_heartbeat_sender import GCSHeartbeatSender
 class TestPX4MissionDownloadHarness(unittest.TestCase):
 
     def setUp(self):
-        sitl_root = os.path.expanduser("~/PX4-Autopilot")
+        sitl_root = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
 
         # PX4 starten
         self.px4 = subprocess.Popen(

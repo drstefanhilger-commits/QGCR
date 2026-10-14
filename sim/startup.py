@@ -114,11 +114,13 @@ class StartupController:
 # Beispiel: 1x Fixed Wing + 1x Multicopter + 1x VTOL
 # -------------------------------------------------------------------------
 if __name__ == "__main__":
+    px4_dir = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
+
     vehicles = [
         VehicleConfig(
             name="fw_1",
             model="rc_cessna",
-            workdir="/home/stefan/PX4_SITL/30Degrees",
+            workdir=px4_dir,
             sim_backend="gz",
             instance_index=0,
             sim_port_offset=0,
@@ -126,7 +128,7 @@ if __name__ == "__main__":
         VehicleConfig(
             name="mc_1",
             model="x500",
-            workdir="/home/stefan/PX4_SITL/30Degrees",
+            workdir=px4_dir,
             sim_backend="gz",
             instance_index=1,
             sim_port_offset=10,
@@ -134,7 +136,7 @@ if __name__ == "__main__":
         VehicleConfig(
             name="vtol_1",
             model="standard_vtol",
-            workdir="/home/stefan/PX4_SITL/30Degrees",
+            workdir=px4_dir,
             sim_backend="gz",
             instance_index=2,
             sim_port_offset=20,

@@ -16,8 +16,7 @@ class PX4SITLHarness:
 
     def __init__(self, px4_dir=None):
         if px4_dir is None:
-            home = os.path.expanduser("~")
-            px4_dir = os.path.join(home, "PX4_SITL", "PX4-Autopilot")
+            px4_dir = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
 
         self.px4_dir = px4_dir
         self.process = None

@@ -1,0 +1,5 @@
+pymavlink==2.4.50
+psutil
+tkintermapview
+pytest
+coverage

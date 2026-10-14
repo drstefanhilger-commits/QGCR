@@ -11,7 +11,7 @@ from pymavlink import mavutil
 class TestPX4MissionDownload(unittest.TestCase):
 
     def setUp(self):
-        sitl_root = os.path.expanduser("~/PX4-Autopilot")
+        sitl_root = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
 
         # PX4 starten
         self.px4 = subprocess.Popen(

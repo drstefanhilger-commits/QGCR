@@ -1,13 +1,13 @@
 ## Environment
 - Windows 11  
 - WSL2 + WSLg  
-- Ubuntu 22.04  
+- Ubuntu 24.04 (noble)  
+- Python 3.12  
 - Intel UHD 770  
-- Mesa 22.x (OpenGL über ANGLE)  
-- Gazebo Harmonic 7.9.0
-- OGRE 1.9  
-- PX4 v1.14.4  
-- pymavlink 2.4.49 (bitte diese Signaturen in pymavlink verwenden)
+- Mesa 25.x (OpenGL ueber WSLg, ggf. `GALLIUM_DRIVER=d3d12`)  
+- Gazebo Harmonic (gz-sim 8.x)
+- PX4 v1.17.0 (`~/PX4-Autopilot`, ueberschreibbar mit `PX4_DIR`)  
+- pymavlink 2.4.50 (bitte diese Signaturen in pymavlink verwenden)
 - MAVSDK 3.15.3  
 	
 ## Vereinbarungen fuer QGC-Replacement
@@ -36,6 +36,27 @@
 - ## Environment und ## Vereinbarung bei Punkt 1 zeigen
 
 
+
+# Setup Ubuntu 24.04
+
+Ubuntu 24.04 verbietet `pip install` ins System-Python (PEP 668), daher venv verwenden.
+`tkinter` ist unter 24.04 nicht vorinstalliert.
+
+```bash
+sudo apt install python3-tk python3-venv lsof
+cd ~/projects
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r QGCR/requirements.txt
+```
+
+Start (aus `~/projects`, da alle Imports `QGCR.*` sind):
+
+```bash
+python3 -m QGCR.main
+```
+
+PX4 liegt standardmaessig unter `~/PX4-Autopilot`, sonst `export PX4_DIR=/pfad/zu/PX4-Autopilot`.
 
 # PX4 SITL GUI (alt)
 

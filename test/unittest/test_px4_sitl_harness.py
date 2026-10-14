@@ -14,7 +14,7 @@ from QGCR.model.model import Model
 class TestPX4SITLHarness(unittest.TestCase):
 
     def setUp(self):
-        sitl_root = os.path.expanduser("~/PX4-Autopilot")
+        sitl_root = os.path.expanduser(os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
 
         self.px4 = subprocess.Popen(
             ["make", "px4_sitl", "gz_rc_cessna"],
