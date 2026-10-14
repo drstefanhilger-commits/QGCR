@@ -29,13 +29,6 @@ class StartupHomeFSM(BaseFSM):
         Home-Position wird jetzt NICHT mehr übersprungen.
         Wir warten auf die erste gültige HOME_POSITION Nachricht.
         """
-        try:
-            if not self._home_logged:
-                self._home_logged = True
-                self.model.log.qgcr(f"Home set: {msg.lat}, {msg.lon}, {msg.alt} m")
-        except Exception:
-            pass
-
         self._pending_event = None
         self._lost_heartbeat = False
         self._home_received = False
@@ -86,6 +79,16 @@ class StartupHomeFSM(BaseFSM):
             return StartupSubState.STARTUP_HOME
 
         # 3) Weiter zu Mission-Download
+        try:
+            if not self._home_logged:
+                self._home_logged = True
+                self.model.log.qgcr(
+                    f"Home set: {self.model.home_lat:.5f}, "
+                    f"{self.model.home_lon:.5f}, {self.model.home_alt:.1f} m"
+                )
+        except Exception:
+            pass
+
         try:
             self.model.queue_registry.require("gui").push(
                 ("status", "Startup: Home-Position empfangen")
