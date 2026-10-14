@@ -19,6 +19,8 @@ class GUIController:
 
     # Erlaubte Button-Events (Schutz gegen Tippfehler)
     VALID_BUTTON_EVENTS = {
+        "ARM",
+        "DISARM",
         "TAKEOFF",
         "LAND",
         "MISSION_START",

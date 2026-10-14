@@ -3,6 +3,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from pymavlink import mavutil
+
 from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.ready.ready_hfsm import ReadyHFSM
 from QGCR.states.main_state import MainState
@@ -59,6 +61,59 @@ class TestReadyHFSM(unittest.TestCase):
 
         with patch("QGCR.states.ready.ready_hfsm.time.time", return_value=1006.0):
             self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    # ------------------------------------------------------------
+    # ARM / DISARM
+    # ------------------------------------------------------------
+    def make_connection(self, target_system=1):
+        conn = MagicMock()
+        conn.master.target_system = target_system
+        conn.master.target_component = 1
+        self.model.connection = conn
+        return conn
+
+    def sent_message(self, conn):
+        conn.send.assert_called_once()
+        return conn.send.call_args[0][0]
+
+    def test_arm_sends_arm_command_and_stays_ready(self):
+        conn = self.make_connection()
+        self.fsm.on_update()
+        self.model.hfsm_events.append("ARM")
+
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
+
+        msg = self.sent_message(conn)
+        self.assertEqual(msg.command, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM)
+        self.assertEqual(msg.param1, 1)
+        self.assertEqual((msg.target_system, msg.target_component), (1, 1))
+        self.assertIn("[QGCR] [ReadyHFSM] ARM gesendet", self.model.qgcr_logs())
+
+    def test_disarm_sends_disarm_command(self):
+        conn = self.make_connection()
+        self.fsm.on_update()
+        self.model.hfsm_events.append("DISARM")
+
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
+
+        msg = self.sent_message(conn)
+        self.assertEqual(msg.command, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM)
+        self.assertEqual(msg.param1, 0)
+
+    def test_arm_without_px4_target_is_ignored(self):
+        conn = self.make_connection(target_system=0)
+        self.fsm.on_update()
+        self.model.hfsm_events.append("ARM")
+
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
+        conn.send.assert_not_called()
+        self.assertIn("[QGCR] [ReadyHFSM] ARM ignoriert: noch kein PX4-Ziel", self.model.qgcr_logs())
+
+    def test_arm_without_connection_is_ignored(self):
+        self.fsm.on_update()
+        self.model.hfsm_events.append("ARM")
+
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
 
 
 if __name__ == "__main__":
