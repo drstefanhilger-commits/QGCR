@@ -62,6 +62,33 @@ class Model:
         8: "RATTITUDE",
     }
 
+    # Untermodi von AUTO (custom_mode Bits 24-31)
+    PX4_AUTO_SUB_MODES = {
+        1: "READY",
+        2: "TAKEOFF",
+        3: "LOITER",
+        4: "MISSION",
+        5: "RTL",
+        6: "LAND",
+        8: "FOLLOW_TARGET",
+        9: "PRECLAND",
+        10: "VTOL_TAKEOFF",
+    }
+
+    @classmethod
+    def decode_px4_mode(cls, custom_mode):
+        """
+        PX4 custom_mode: Hauptmodus in Bits 16-23, Untermodus in Bits 24-31.
+        Beispiel: AUTO (4) / LAND (6) → "AUTO.LAND".
+        """
+        main_mode = (custom_mode >> 16) & 0xFF
+        sub_mode = (custom_mode >> 24) & 0xFF
+
+        name = cls.PX4_MAIN_MODES.get(main_mode, f"MODE_{main_mode}")
+        if main_mode == 4 and sub_mode:
+            name += "." + cls.PX4_AUTO_SUB_MODES.get(sub_mode, f"SUB_{sub_mode}")
+        return name
+
     # Auswählbare PX4/Gazebo-Modelle (make px4_sitl <name>)
     ALLOWED_MODELS = [
         "gz_rc_cessna",
@@ -182,9 +209,7 @@ class Model:
         self.compid = msg.get_srcComponent()
 
         base_mode = msg.base_mode
-        custom_mode = msg.custom_mode
-        main_mode = (custom_mode >> 24) & 0xFF
-        self.px4_mode = self.PX4_MAIN_MODES.get(main_mode, f"MODE_{main_mode}")
+        self.px4_mode = self.decode_px4_mode(msg.custom_mode)
 
         self.px4_armed = bool(base_mode & self.MAV_MODE_FLAG_SAFETY_ARMED)
 

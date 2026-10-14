@@ -18,15 +18,16 @@ class TestReadyHFSM(unittest.TestCase):
         self.model.takeoff = MagicMock()
         self.fsm = ReadyHFSM(self.model)
 
-    def test_enter_sets_state_and_clears_events(self):
-        self.model.hfsm_events.append("TAKEOFF")   # alter Event aus Vorzyklus
-
+    def test_enter_sets_state(self):
         state = self.fsm.on_update()
 
         self.assertEqual(state, MainState.READY)
         self.assertEqual(self.model.hfsm_main, "READY")
         self.assertEqual(self.model.hfsm_sub, "IDLE")
-        self.assertEqual(len(self.model.hfsm_events), 0)
+
+    def test_takeoff_before_first_tick_is_kept(self):
+        self.model.hfsm_events.append("TAKEOFF")
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
 
     def test_stays_ready_and_ticks_takeoff(self):
         self.fsm.on_update()

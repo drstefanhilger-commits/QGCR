@@ -1,7 +1,10 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_airborne_hfsm.py ===
 
 import unittest
+import math
 from unittest.mock import MagicMock
+
+from pymavlink import mavutil
 
 from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.airborne.airborne_hfsm import AirborneHFSM
@@ -51,6 +54,82 @@ class TestAirborneHFSM(unittest.TestCase):
     def test_connection_lost_goes_reset(self):
         self.fsm.on_update()
         self.model.px4_connected = False
+
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    # --------------------------------------------------------
+    # LAND
+    # --------------------------------------------------------
+    def make_connection(self, target_system=1):
+        conn = MagicMock()
+        conn.master.target_system = target_system
+        conn.master.target_component = 1
+        self.model.connection = conn
+        return conn
+
+    def start_flight(self):
+        conn = self.make_connection()
+        self.model.px4_armed = True
+        self.fsm.on_update()                     # enter
+        return conn
+
+    def test_land_sends_nav_land(self):
+        conn = self.start_flight()
+        self.model.hfsm_events.append("LAND")
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+
+        msg = conn.send.call_args[0][0]
+        self.assertEqual(msg.command, mavutil.mavlink.MAV_CMD_NAV_LAND)
+        self.assertTrue(math.isnan(msg.param5) and math.isnan(msg.param6))
+        self.assertEqual(self.model.hfsm_sub, "LAND")
+        self.takeoff.reset.assert_called_once()   # laufende Takeoff-Sequenz stoppen
+
+    def test_stays_airborne_while_landing(self):
+        self.start_flight()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+
+    def test_landed_and_disarmed_goes_ready(self):
+        self.start_flight()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+
+        self.model.px4_armed = False             # PX4 disarmt nach dem Aufsetzen
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
+        self.assertEqual(self.takeoff.reset.call_count, 2)
+        self.assertIn("[QGCR] [AirborneHFSM] gelandet und disarmed → READY", self.model.qgcr_logs())
+
+    def test_disarm_without_land_stays_airborne(self):
+        self.start_flight()
+        self.model.px4_armed = False
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+
+    def test_second_land_is_ignored(self):
+        conn = self.start_flight()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+
+        conn.send.assert_called_once()
+
+    def test_land_without_px4_target_is_ignored(self):
+        conn = self.make_connection(target_system=0)
+        self.fsm.on_update()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+
+        conn.send.assert_not_called()
+        self.assertEqual(self.model.hfsm_sub, "FLIGHT")
+
+    def test_reset_while_landing_goes_reset(self):
+        self.start_flight()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+        self.model.hfsm_events.append("RESET")
 
         self.assertEqual(self.fsm.on_update(), MainState.RESET)
 

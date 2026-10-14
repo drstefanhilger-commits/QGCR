@@ -56,7 +56,15 @@ class TestPX4ApplicationModelSwitch(unittest.TestCase):
                 return
             time.sleep(0.05)
         self.fail(f"Timeout: {what} (hfsm={self.model.hfsm_main}/{self.model.hfsm_sub}, "
-                  f"type={self.model.px4_vehicle_type})")
+                  f"type={self.model.px4_vehicle_type}, hb={self.model.px4_heartbeat_count}, "
+                  f"connected={self.model.px4_connected})\n{self.log_tail()}")
+
+    def log_tail(self, n=25):
+        """Letzte Zeilen aus QGCR- und PX4-Log (Diagnose bei Timeout)."""
+        log = self.app.window.log_tab
+        qgcr = log.qgcr_text.get("1.0", "end").strip().splitlines()[-n:]
+        px4 = log.px4_text.get("1.0", "end").strip().splitlines()[-n:]
+        return "--- QGCR ---\n" + "\n".join(qgcr) + "\n--- PX4 ---\n" + "\n".join(px4)
 
     def ready_with(self, mav_type):
         return (self.model.hfsm_main == "READY"
@@ -68,18 +76,22 @@ class TestPX4ApplicationModelSwitch(unittest.TestCase):
 
         self.pump_until(lambda: self.ready_with(fixed_wing), 150, "READY mit rc_cessna")
 
+        old_pid = self.model.px4_pid
+
         combo = self.app.window.home_tab.model_combo
         self.assertEqual(combo.get(), "gz_rc_cessna")
         combo.set("gz_fsl_rocket_vtol")
         combo.event_generate("<<ComboboxSelected>>")
 
-        seen = set()
-        def track():
-            seen.add(self.model.hfsm_main)
-            return self.ready_with(vtol) and "RESET" in seen
-        self.pump_until(track, 180, "READY mit fsl_rocket_vtol")
+        # RESET kann nur einen Tick dauern → nicht per Abtastung von hfsm_main prüfen,
+        # sondern über neue PX4-Instanz (PID) und das QGCR-Log
+        self.pump_until(lambda: self.ready_with(vtol)
+                        and self.model.px4_pid not in (None, old_pid),
+                        180, "READY mit fsl_rocket_vtol (neue PX4-Instanz)")
 
-        self.assertIn("STARTUP", seen)
+        qgcr_log = self.app.window.log_tab.qgcr_text.get("1.0", "end")
+        self.assertIn("HFSM-Wechsel: READY → RESET", qgcr_log)
+        self.assertIn("HFSM-Wechsel: RESET → STARTUP", qgcr_log)
         self.assertEqual(combo.get(), "gz_fsl_rocket_vtol")
         self.assertEqual(count_procs("-x", "px4"), 1)
         self.assertEqual(count_procs("-f", "^gz sim"), 1)

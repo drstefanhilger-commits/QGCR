@@ -7,11 +7,11 @@ from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.test.unittest.fake_mavlink import make_msg, run_connection
 
 
-def px4_heartbeat(armed=False, main_mode=4, system_status=3):
+def px4_heartbeat(armed=False, main_mode=4, sub_mode=3, system_status=3):
     return make_msg(
         "HEARTBEAT",
         base_mode=128 if armed else 0,
-        custom_mode=main_mode << 24,
+        custom_mode=(main_mode << 16) | (sub_mode << 24),
         system_status=system_status,
     )
 
@@ -27,7 +27,7 @@ class TestConnectionHeartbeatPipeline(unittest.TestCase):
 
         self.assertTrue(self.model.px4_connected)
         self.assertEqual(self.model.px4_heartbeat_count, 1)
-        self.assertEqual(self.model.px4_mode, "AUTO")
+        self.assertEqual(self.model.px4_mode, "AUTO.LOITER")
         self.assertFalse(self.model.px4_armed)
         self.assertTrue(self.model.ready_to_arm)
 

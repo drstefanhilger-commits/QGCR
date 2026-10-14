@@ -135,7 +135,7 @@ Model(queue_registry)
 - **Heartbeat:** `px4_connected`, `px4_heartbeat_count`, `px4_last_heartbeat`;
   `check_timeout()` setzt `px4_connected=False` nach `HEARTBEAT_TIMEOUT` (8 s) und 2 Fehlversuchen
   (es gibt keinen separaten HeartbeatMonitor)
-- **Fahrzeug:** `px4_mode`, `px4_armed`, `ready_to_arm`, `vehicle_lat/lon/alt`, `home_lat/lon/alt`
+- **Fahrzeug:** `px4_mode` (z. B. `AUTO.LAND`; Haupt-/Untermodus aus `custom_mode` Bits 16-23 / 24-31), `px4_armed`, `ready_to_arm`, `vehicle_lat/lon/alt`, `home_lat/lon/alt`
 - **Mission:** `mission` (`MissionData`: `items`, `count`, `ready`), `clear_mission()`, `add_mission_item()`
 - **HFSM:** `hfsm_events` (deque, GUI → HFSM), `hfsm_main`, `hfsm_sub`, `push_state_update()`
 - **MicroServices:** `services` (Container mit `_NullService`-Platzhaltern) und Aliase
@@ -198,14 +198,16 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 - erzeugt bei jedem Wechsel eine **neue** HFSM-Instanz
 - globale Events vor jedem Tick: `TAKEOFF_DONE` → AIRBORNE, `RESET` → RESET,
   `RESET_DONE` bzw. `model.reset_done` → STARTUP
+- beim Wechsel nach READY verwirft er alte `hfsm_events` – bevor `hfsm_main = READY` sichtbar wird,
+  damit ein direkt danach geklicktes TAKEOFF nicht verloren geht
 
 ## High-Level-FSMs (`MainState`)
 
 | Zustand | Klasse | Verhalten |
 |---|---|---|
 | `STARTUP` | `StartupHFSM` | Enter: `PX4SwarmStarter(model.vehicle_configs).start_all()` (oder vorhandenen `model.startup_controller` wiederverwenden). → `READY`, sobald `connection_ready()` und `heartbeat_ok()` |
-| `READY` | `ReadyHFSM` | Enter: `hfsm_events` leeren. Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, Mission-Tab aktiv (`model.active_tab`) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
-| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `RESET` → RESET, Verbindung verloren → RESET |
+| `READY` | `ReadyHFSM` | Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, Mission-Tab aktiv (`model.active_tab`) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
+| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `RESET` → RESET, Verbindung verloren → RESET |
 | `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, Heartbeat-Status verwerfen (`model.reset_heartbeat()`), `reset_done=True` → STARTUP |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |

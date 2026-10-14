@@ -62,15 +62,15 @@ def test_on_heartbeat_updates_state_and_gui():
     reg = QueueRegistry()
     m = Model(reg)
 
-    # custom_mode: main_mode = 4 → AUTO
+    # custom_mode: Hauptmodus Bits 16-23 (4 = AUTO), Untermodus Bits 24-31 (3 = LOITER)
     hb = FakeHeartbeat(
-        base_mode=128,          # armed
-        custom_mode=(4 << 24)   # AUTO
+        base_mode=128,                    # armed
+        custom_mode=(4 << 16) | (3 << 24) # AUTO.LOITER
     )
 
     m.on_heartbeat(hb)
 
-    assert m.px4_mode == "AUTO"
+    assert m.px4_mode == "AUTO.LOITER"
     assert m.px4_armed is True
     assert m.px4_connected is True
     assert m.px4_heartbeat_count == 1
@@ -79,7 +79,7 @@ def test_on_heartbeat_updates_state_and_gui():
     assert len(events) == 1
     tag, payload = events[0]
     assert tag == "telemetry"
-    assert payload["mode"] == "AUTO"
+    assert payload["mode"] == "AUTO.LOITER"
     assert payload["armed"] is True
     assert payload["px4_connected"] is True
 
@@ -213,3 +213,22 @@ def test_gui_queue_stays_bounded_under_check_timeout():
     events = pop_gui_events(reg)
     assert len(events) == GUIEventQueue.MAXLEN
     assert all(tag == "telemetry" for tag, _ in events)
+
+
+# ------------------------------------------------------------
+# PX4-Modus aus custom_mode (Werte aus PX4 v1.17 SITL)
+# ------------------------------------------------------------
+@pytest.mark.parametrize("main, sub, expected", [
+    (1, 0, "MANUAL"),
+    (3, 0, "POSCTL"),
+    (4, 0, "AUTO"),
+    (4, 2, "AUTO.TAKEOFF"),
+    (4, 3, "AUTO.LOITER"),
+    (4, 4, "AUTO.MISSION"),
+    (4, 5, "AUTO.RTL"),
+    (4, 6, "AUTO.LAND"),
+    (4, 42, "AUTO.SUB_42"),
+    (99, 0, "MODE_99"),
+])
+def test_decode_px4_mode(main, sub, expected):
+    assert Model.decode_px4_mode((main << 16) | (sub << 24)) == expected

@@ -95,6 +95,15 @@ class TakeoffMicroService:
 
         print(f"[TakeoffMS] Start → Zielhöhe {alt:.1f} m")
 
+    def reset(self):
+        """
+        Zurück nach IDLE (nach Landung / RESET): bricht eine laufende
+        Sequenz ab, der nächste TAKEOFF startet wieder von vorn.
+        """
+        self.state = self.STATE_IDLE
+        self.done = False
+        self.error = None
+
     # ------------------------------------------------------------
     # FSM Tick
     # ------------------------------------------------------------

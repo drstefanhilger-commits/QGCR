@@ -22,12 +22,8 @@ class ReadyHFSM(BaseHFSM):
         # Zeit merken für Grace-Phase
         self._enter_time = time.time()
 
-        # 🔥 WICHTIG: alte Events verwerfen (z.B. TAKEOFF vom vorherigen Zyklus)
-        try:
-            self.model.hfsm_events.clear()
-            self.model.log.qgcr("[ReadyHFSM] cleared hfsm_events on enter")
-        except Exception:
-            pass
+        # Alte Events verwirft der MainController beim Wechsel nach READY –
+        # NICHT hier, sonst gehen Klicks zwischen Wechsel und erstem Tick verloren.
 
     def _on_during(self):
         self.model.takeoff.tick()

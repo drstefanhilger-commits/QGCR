@@ -86,6 +86,12 @@ class MainController:
         old = self.active_state
         self.active_state = new_state
 
+        # READY: alte Events (z. B. TAKEOFF aus dem Vorzyklus) verwerfen –
+        # hier, BEVOR hfsm_main = READY sichtbar wird. Ein Klick, den die GUI
+        # danach sendet, bleibt erhalten.
+        if new_state == MainState.READY:
+            self.model.hfsm_events.clear()
+
         # Neues HFSM erzeugen
         self.active_fsm = self.state_map[new_state](self.model)
 

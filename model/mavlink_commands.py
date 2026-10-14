@@ -157,6 +157,20 @@ def cmd_takeoff(
 # ---------------------------------------------------------------------------
 # 4) ACK-Utility (optional)
 # ---------------------------------------------------------------------------
+def cmd_land(target_system: int = 1, target_component: int = 1):
+    """
+    MAV_CMD_NAV_LAND (21) an der aktuellen Position:
+    param4 (Yaw) und param5-7 (Lat/Lon/Alt) = NaN → PX4 nutzt aktuelle Werte.
+    PX4 wechselt in AUTO.LAND (VTOL: vertikal, Fixed-Wing: Landeanflug).
+    """
+    nan = float("nan")
+    return _cmd_long(
+        mavutil.mavlink.MAV_CMD_NAV_LAND,
+        target_system, target_component,
+        p4=nan, p5=nan, p6=nan, p7=nan
+    )
+
+
 def is_ack_success(msg) -> bool:
     """
     Prüft, ob ein COMMAND_ACK erfolgreich war.

@@ -14,7 +14,7 @@ class TestConnectionModelHeartbeat(unittest.TestCase):
         self.dispatcher = MagicMock()
 
     def test_heartbeat_pushes_telemetry_to_gui(self):
-        hb = make_msg("HEARTBEAT", base_mode=128, custom_mode=3 << 24, system_status=4)
+        hb = make_msg("HEARTBEAT", base_mode=128, custom_mode=3 << 16, system_status=4)
         run_connection(self.model, self.dispatcher, [hb])
 
         telemetry = [p for k, p in self.model.gui_items() if k == "telemetry"]
