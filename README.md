@@ -105,7 +105,7 @@ Tk-Mainloop (GUI):      Buttons → GUIController.handle_button_event() → mode
 
 | Komponente | Datei | Aufgabe |
 |---|---|---|
-| `QueueRegistry` | `core/queue_registry.py` | System-Queues `telemetry`, `fsm`, `mission`, `gui` + Log-Queues `px4_log_queue`, `sim_log_queue`, `qgcr_log_queue` |
+| `QueueRegistry` | `core/queue_registry.py` | System-Queues `telemetry`, `fsm`, `mission`, `gui` (Ring-Buffer, max. 500 Einträge – wird derzeit nicht konsumiert) + Log-Queues `px4_log_queue`, `sim_log_queue`, `qgcr_log_queue` |
 | `Model` | `model/model.py` | Zentrale Datenhaltung (siehe unten) |
 | `LogRouter` | `logging/log_router.py` | `model.log.px4(id, text)`, `.sim(src, text)`, `.qgcr(text)` → Log-Queues |
 | `Connection` | `communication/connection.py` | MAVLink über Port #0, RX- und GCS-Heartbeat-Thread |

@@ -146,3 +146,23 @@ def test_guieventqueue_basic():
 
     items = q.pop_all()
     assert items == ["click", "keypress"]
+
+
+def test_guieventqueue_is_bounded_ring():
+    q = GUIEventQueue()
+    assert isinstance(q, RingBufferQueue)
+
+    for i in range(GUIEventQueue.MAXLEN + 100):
+        q.push(i)
+
+    items = q.pop_all()
+    assert len(items) == GUIEventQueue.MAXLEN
+    assert items[0] == 100
+    assert items[-1] == GUIEventQueue.MAXLEN + 99
+
+
+def test_guieventqueue_custom_maxlen():
+    q = GUIEventQueue(maxlen=3)
+    for i in range(5):
+        q.push(i)
+    assert q.pop_all() == [2, 3, 4]

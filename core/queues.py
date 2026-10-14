@@ -79,8 +79,13 @@ class MissionQueue(BaseQueue):
     pass
 
 
-class GUIEventQueue(BaseQueue):
+class GUIEventQueue(RingBufferQueue):
     """
     Queue für GUI-Events, die im Tk-Thread verarbeitet werden.
+    Ring-Buffer: hält höchstens MAXLEN Einträge, älteste werden verworfen
+    (Telemetrie/Status werden laufend gepusht, auch wenn niemand konsumiert).
     """
-    pass
+    MAXLEN = 500
+
+    def __init__(self, maxlen=MAXLEN):
+        super().__init__(maxlen=maxlen)

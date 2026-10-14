@@ -33,7 +33,7 @@ class QueueRegistry:
         telemetry  → RingBufferQueue (hochfrequent)
         fsm        → FSMEventQueue (deterministisch)
         mission    → MissionQueue
-        gui        → GUIEventQueue
+        gui        → GUIEventQueue (RingBuffer, max. 500 Einträge)
 
     - Dynamische Queues:
         Beliebige Worker/FSM/Service-Queues via register(name, type)

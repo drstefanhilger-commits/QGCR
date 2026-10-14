@@ -196,3 +196,20 @@ def test_add_mission_item():
     assert item["z"] == 500.0
 
     assert m.mission.count == 1
+
+
+# ------------------------------------------------------------
+# GUI-Queue bleibt begrenzt (niemand konsumiert sie)
+# ------------------------------------------------------------
+def test_gui_queue_stays_bounded_under_check_timeout():
+    from QGCR.core.queues import GUIEventQueue
+
+    reg = QueueRegistry()
+    m = Model(reg)
+
+    for _ in range(GUIEventQueue.MAXLEN * 3):
+        m.check_timeout()
+
+    events = pop_gui_events(reg)
+    assert len(events) == GUIEventQueue.MAXLEN
+    assert all(tag == "telemetry" for tag, _ in events)
