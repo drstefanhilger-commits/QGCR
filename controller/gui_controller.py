@@ -261,7 +261,8 @@ class GUIController:
         transfer = in_mission and self.model.hfsm_sub in ("UPLOAD", "DOWNLOAD")
 
         tab = self.main_window.mission_tab
-        tab.set_enabled(upload=idle, download=idle, stop=transfer)
+        start = idle and self.model.mission.ready
+        tab.set_enabled(upload=idle, download=idle, stop=transfer, start=start)
         tab.show_mission(self.get_mission_view_data())
 
     # ------------------------------------------------------------

@@ -133,6 +133,67 @@ class TestAirborneHFSM(unittest.TestCase):
 
         self.assertEqual(self.fsm.on_update(), MainState.RESET)
 
+    # --------------------------------------------------------
+    # MISSION (im Flug / nach Start vom Boden)
+    # --------------------------------------------------------
+    def load_mission(self):
+        self.model.add_mission_item(0, 22, 47.0, 8.0, 20.0)
+        self.model.mission.ready = True
+
+    def test_mission_start_in_flight(self):
+        conn = self.start_flight()
+        self.load_mission()
+        self.model.hfsm_events.append("MISSION_START")
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+
+        msg = conn.send.call_args[0][0]
+        self.assertEqual(msg.command, mavutil.mavlink.MAV_CMD_MISSION_START)
+        self.assertTrue(self.model.mission_running)
+        self.assertEqual(self.model.hfsm_sub, "MISSION")
+        self.takeoff.reset.assert_called()
+
+    def test_mission_start_without_mission_is_ignored(self):
+        conn = self.start_flight()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        conn.send.assert_not_called()
+        self.assertFalse(self.model.mission_running)
+
+    def test_mission_end_with_landing_goes_ready(self):
+        self.start_flight()
+        self.load_mission()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        self.model.px4_armed = False             # Mission hat gelandet, PX4 disarmt
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
+        self.assertFalse(self.model.mission_running)
+
+    def test_enter_with_running_mission_skips_takeoff(self):
+        self.model.mission_running = True        # Start vom Boden (MissionHFSM)
+        self.model.px4_armed = True
+        fsm = AirborneHFSM(self.model)
+
+        self.assertEqual(fsm.on_update(), MainState.AIRBORNE)
+        self.takeoff.start.assert_not_called()
+        self.assertEqual(self.model.hfsm_sub, "MISSION")
+
+        self.model.px4_armed = False
+        self.assertEqual(fsm.on_update(), MainState.READY)
+
+    def test_land_during_mission(self):
+        conn = self.start_flight()
+        self.load_mission()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+        self.model.hfsm_events.append("LAND")
+        self.fsm.on_update()
+
+        self.assertEqual(conn.send.call_args[0][0].command, mavutil.mavlink.MAV_CMD_NAV_LAND)
+        self.assertEqual(self.model.hfsm_sub, "LAND")
+
 
 if __name__ == "__main__":
     unittest.main()

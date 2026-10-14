@@ -45,6 +45,11 @@ class TestResetHFSM(unittest.TestCase):
         self.assertIsNone(self.model.px4_vehicle_type)
         self.assertFalse(self.model.heartbeat_ok())
 
+    def test_reset_clears_mission_running(self):
+        self.model.mission_running = True
+        self.fsm.on_update()
+        self.assertFalse(self.model.mission_running)
+
     def test_check_timeout_after_reset_stays_disconnected(self):
         self.fsm.on_update()
 

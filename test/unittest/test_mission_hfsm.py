@@ -4,7 +4,9 @@ import threading
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import ANY, MagicMock
+from unittest.mock import ANY, MagicMock, patch
+
+from pymavlink import mavutil
 
 from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.mission.mission_hfsm import MissionHFSM
@@ -265,6 +267,97 @@ class TestMissionHFSM(unittest.TestCase):
 
         self.model.hfsm_events.append("MISSION_STOP")
         self.assertEqual(self.tick_until_idle(), MainState.READY)
+
+    # --------------------------------------------------------
+    # Missionsstart vom Boden (MISSION_START)
+    # --------------------------------------------------------
+    def ready_to_start(self):
+        conn = MagicMock()
+        conn.master.target_system = 1
+        conn.master.target_component = 1
+        self.model.connection = conn
+        self.model.add_mission_item(0, 22, 47.0, 8.0, 20.0)
+        self.model.mission.ready = True
+        return conn
+
+    def test_start_sends_mission_start(self):
+        conn = self.ready_to_start()
+        self.model.hfsm_events.append("MISSION_START")
+
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
+        msg = conn.send.call_args[0][0]
+        self.assertEqual(msg.command, mavutil.mavlink.MAV_CMD_MISSION_START)
+        self.assertEqual(self.model.hfsm_sub, "START")
+        self.assertEqual(self.model.mission_status, "Missionsstart gesendet …")
+
+    def test_start_goes_airborne_when_armed_in_auto_mission(self):
+        self.ready_to_start()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        self.model.px4_armed = True
+        self.model.px4_mode = "AUTO.MISSION"
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+        self.assertTrue(self.model.mission_running)
+        self.assertEqual(self.model.mission_status, "Mission läuft")
+
+    def test_start_rejected_after_timeout(self):
+        self.ready_to_start()
+        with patch("QGCR.states.mission.mission_hfsm.time.time", return_value=1000.0):
+            self.model.hfsm_events.append("MISSION_START")
+            self.fsm.on_update()
+
+        with patch("QGCR.states.mission.mission_hfsm.time.time", return_value=1011.0):
+            self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
+        self.assertEqual(self.model.hfsm_sub, "IDLE")
+        self.assertFalse(self.model.mission_running)
+        self.assertTrue(self.model.mission_status.startswith("Missionsstart abgelehnt"))
+
+    def test_start_without_mission(self):
+        conn = self.ready_to_start()
+        self.model.mission.ready = False
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        conn.send.assert_not_called()
+        self.assertEqual(self.model.mission_status, "Start: keine Mission (erst hoch- oder herunterladen)")
+
+    def test_start_without_connection(self):
+        self.model.add_mission_item(0, 22, 47.0, 8.0, 20.0)
+        self.model.mission.ready = True
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        self.assertEqual(self.model.mission_status, "Start: keine Verbindung zu PX4")
+
+    def test_home_tab_waits_while_starting(self):
+        self.ready_to_start()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        self.model.active_tab = "Home"
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
+    def test_no_transfer_while_starting(self):
+        self.ready_to_start()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        self.model.hfsm_events.append("MISSION_DOWNLOAD")
+        self.fsm.on_update()
+        self.ms.download.assert_not_called()
+
+    def test_stop_while_starting_is_ignored(self):
+        self.ready_to_start()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+
+        self.model.hfsm_events.append("MISSION_STOP")
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+        self.assertEqual(self.model.hfsm_sub, "START")
 
 
 if __name__ == "__main__":

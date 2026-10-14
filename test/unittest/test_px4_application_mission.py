@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_px4_application_mission.py ===
 
+import gc
 import os
 import time
 import unittest
@@ -29,12 +30,10 @@ class TestPX4ApplicationMission(unittest.TestCase):
         self.plan = write_plan()
 
     def tearDown(self):
-        self.app.stop()
-        starter = getattr(self.model, "startup_controller", None)
-        if starter is not None:
-            starter.stop_all()
+        self.app.shutdown()
         PX4Sitl._kill_leftovers()
-        self.app.root.destroy()
+        del self.app
+        gc.collect()
         os.remove(self.plan)
         self._print.stop()
         self._env.stop()

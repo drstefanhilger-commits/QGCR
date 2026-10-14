@@ -7,7 +7,7 @@ from unittest.mock import patch
 from pymavlink import mavutil
 
 from QGCR.model.mission_parser import load_qgc_plan
-from QGCR.test.unittest.plan_fixture import write_plan, WAYPOINTS
+from QGCR.test.unittest.plan_fixture import write_plan, write_flight_plan, WAYPOINTS
 
 
 class TestModelMissionParser(unittest.TestCase):
@@ -34,6 +34,22 @@ class TestModelMissionParser(unittest.TestCase):
     @patch("builtins.print")
     def test_null_params_become_zero(self, _print):
         self.assertEqual(load_qgc_plan(self.path)[0].param4, 0.0)
+
+    @patch("builtins.print")
+    def test_fw_landing_pattern(self, _print):
+        path = write_flight_plan("gz_rc_cessna")
+        try:
+            items = load_qgc_plan(path)
+        finally:
+            os.remove(path)
+
+        cmds = [i.command for i in items]
+        M = mavutil.mavlink
+        self.assertEqual(cmds[-3:], [M.MAV_CMD_DO_LAND_START, M.MAV_CMD_NAV_LOITER_TO_ALT, M.MAV_CMD_NAV_LAND])
+
+        loiter = items[-2]
+        self.assertEqual((loiter.param1, loiter.param2, loiter.param4), (1, 75, 1))  # wie QGC
+        self.assertEqual([i.seq for i in items], list(range(len(items))))
 
     def test_invalid_file_raises(self):
         with open(self.path, "w") as f:

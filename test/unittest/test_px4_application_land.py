@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_px4_application_land.py ===
 
+import gc
 import os
 import tempfile
 import time
@@ -31,12 +32,10 @@ class TestPX4ApplicationLand(unittest.TestCase):
         self.home = self.app.window.home_tab
 
     def tearDown(self):
-        self.app.stop()
-        starter = getattr(self.model, "startup_controller", None)
-        if starter is not None:
-            starter.stop_all()
+        self.app.shutdown()
         PX4Sitl._kill_leftovers()
-        self.app.root.destroy()
+        del self.app
+        gc.collect()
         self.tmp.cleanup()
         self._print.stop()
         self._env.stop()

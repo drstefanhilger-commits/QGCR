@@ -48,6 +48,15 @@ class TestViewMissionTab(unittest.TestCase):
         self.tab.btn_download.invoke()
         self.ctrl.handle_button_event.assert_called_once_with("MISSION_DOWNLOAD")
 
+    def test_start_button(self):
+        self.assertEqual(str(self.tab.btn_start["state"]), "disabled")
+
+        self.tab.set_enabled(upload=True, download=True, stop=False, start=True)
+        self.assertEqual(str(self.tab.btn_start["state"]), "normal")
+
+        self.tab.btn_start.invoke()
+        self.ctrl.handle_button_event.assert_called_once_with("MISSION_START")
+
     def test_stop_button_sends_event(self):
         self.tab.set_enabled(upload=False, download=False, stop=True)
         self.tab.btn_stop.invoke()

@@ -171,6 +171,18 @@ def cmd_land(target_system: int = 1, target_component: int = 1):
     )
 
 
+def cmd_mission_start(target_system: int = 1, target_component: int = 1, first_item: int = 0):
+    """
+    MAV_CMD_MISSION_START (300): PX4 armt (falls nötig) und schaltet in AUTO.MISSION.
+    param1 = erstes Item (0 = Missionsanfang), param2 = letztes Item (0 = bis zum Ende).
+    """
+    return _cmd_long(
+        mavutil.mavlink.MAV_CMD_MISSION_START,
+        target_system, target_component,
+        p1=first_item, p2=0
+    )
+
+
 def is_ack_success(msg) -> bool:
     """
     Prüft, ob ein COMMAND_ACK erfolgreich war.

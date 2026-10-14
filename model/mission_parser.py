@@ -100,16 +100,18 @@ def load_qgc_plan(filename):
             })
             seq += 1
 
-            # 2) NAV_LOITER_TO_ALT
+            # 2) NAV_LOITER_TO_ALT (wie QGC):
+            #    param1 = 1 (Heading required), param2 = Radius (positiv = im Uhrzeigersinn),
+            #    param4 = 1 (Ausstieg tangential Richtung Landepunkt)
             mission_items.append({
                 "seq": seq,
                 "command": mavutil.mavlink.MAV_CMD_NAV_LOITER_TO_ALT,
                 "frame": mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
                 "params": [
-                    loiter_radius,
+                    1,
+                    loiter_radius if loiter_clockwise else -loiter_radius,
                     0,
-                    0,
-                    1 if loiter_clockwise else -1,
+                    1,
                     app_lat,
                     app_lon,
                     app_alt

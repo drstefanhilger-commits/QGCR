@@ -67,9 +67,13 @@ class PX4SwarmStarter:
             # Ohne Logger keine Pipe (würde nie gelesen und PX4 irgendwann blockieren).
             log_output = bool(self.model and hasattr(self.model, "log"))
 
+            # stdin=PIPE (offen, nie beschrieben): die PX4-Shell (pxh>) darf nicht vom
+            # Terminal lesen – sonst verstellt sie den Terminal-Modus und "frisst" Eingaben.
+            # NICHT DEVNULL: bei EOF gibt pxh endlos Prompts aus und flutet das Log.
             proc = subprocess.Popen(
                 cmd,
                 cwd=cfg.px4_dir,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE if log_output else subprocess.DEVNULL,
                 stderr=subprocess.STDOUT if log_output else subprocess.DEVNULL,
                 preexec_fn=os.setsid,
@@ -147,6 +151,12 @@ class PX4SwarmStarter:
                         os.killpg(pgid, signal.SIGKILL)
                     except Exception:
                         pass
+
+            if proc.stdin:
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
 
             print(f"[PX4SwarmStarter] PX4[{instance_id}] stopped.")
 

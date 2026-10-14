@@ -1,18 +1,25 @@
 # === PFAD-B FULL FILE: QGCR/states/mission/mission_hfsm.py ===
 
 import threading
+import time
 
+from QGCR.model.mavlink_commands import cmd_mission_start
 from QGCR.communication.microservices.mission_microservice import MissionMicroService
 from QGCR.states.main_state import MainState
 from QGCR.states.base_hfsm import BaseHFSM
 
 
 class MissionHFSM(BaseHFSM):
+
+    START_TIMEOUT = 10.0    # [s] bis PX4 armed + AUTO.MISSION meldet
     """
     MISSION:
     - MISSION_UPLOAD   → model.mission_upload_items über model.mission_ms hochladen
     - MISSION_DOWNLOAD → Mission von PX4 laden und in model.mission schreiben
     - MISSION_STOP     → laufenden Transfer abbrechen (Mission im Model bleibt unverändert)
+    - MISSION_START    → MAV_CMD_MISSION_START (PX4 armt + AUTO.MISSION); sobald armed und
+                         AUTO.MISSION → AIRBORNE (model.mission_running). Sonst nach
+                         START_TIMEOUT Statusmeldung, bleibt MISSION
     - Home-Tab aktiv (model.active_tab == "Home") → READY (während eines Transfers erst danach)
     - RESET / Verbindung verloren → RESET
 
@@ -31,6 +38,8 @@ class MissionHFSM(BaseHFSM):
         self._job_items = None
         self._job_result = None
 
+        self._start_deadline = None
+
     def _on_enter(self):
         self.model.log.qgcr("[MissionHFSM] entering MISSION")
         self.model.hfsm_main = "MISSION"
@@ -38,9 +47,12 @@ class MissionHFSM(BaseHFSM):
         self.model.push_state_update()
 
     def _on_during(self):
-        # 1) Laufenden Transfer auswerten
+        # 1) Laufenden Transfer bzw. Missionsstart auswerten
         if self._job is not None and not self._job.is_alive():
             self._finish_job()
+
+        if self._start_deadline is not None and self._check_mission_start():
+            return
 
         # 2) Events
         if self.model.hfsm_events:
@@ -60,6 +72,9 @@ class MissionHFSM(BaseHFSM):
 
                 case "MISSION_STOP":
                     self._cancel_job()
+
+                case "MISSION_START":
+                    self._start_mission()
 
         # 3) Verbindung
         if not self.model.connection_ready():
@@ -82,7 +97,7 @@ class MissionHFSM(BaseHFSM):
     # Transfer starten
     # ------------------------------------------------------------
     def _busy(self):
-        return self._job is not None
+        return self._job is not None or self._start_deadline is not None
 
     def _service(self):
         ms = getattr(self.model, "mission_ms", None)
@@ -136,7 +151,7 @@ class MissionHFSM(BaseHFSM):
             self._job_result = e
 
     def _cancel_job(self):
-        if not self._busy():
+        if self._job is None:
             self.model.log.qgcr("[MissionHFSM] Stop ignoriert: kein Transfer aktiv")
             return
 
@@ -188,6 +203,44 @@ class MissionHFSM(BaseHFSM):
             self.model.add_mission_item(m.seq, m.command, m.x / 1e7, m.y / 1e7, m.z)
         self.model.mission.ready = len(msgs) > 0
         self.model.mission_loaded = len(msgs) > 0
+
+    # ------------------------------------------------------------
+    # Missionsstart (vom Boden)
+    # ------------------------------------------------------------
+    def _start_mission(self):
+        if self._busy():
+            self.model.log.qgcr("[MissionHFSM] Start ignoriert: Transfer/Start läuft bereits")
+            return
+
+        if not self.model.mission.ready:
+            self._set_status("Start: keine Mission (erst hoch- oder herunterladen)")
+            return
+
+        connection = getattr(self.model, "connection", None)
+        master = getattr(connection, "master", None)
+        if master is None or not getattr(master, "target_system", 0):
+            self._set_status("Start: keine Verbindung zu PX4")
+            return
+
+        connection.send(cmd_mission_start(master.target_system, master.target_component))
+        self._start_deadline = time.time() + self.START_TIMEOUT
+        self._set_sub("START")
+        self._set_status("Missionsstart gesendet …")
+
+    def _check_mission_start(self):
+        """True, wenn der Zustand gewechselt wird."""
+        if self.model.px4_armed and self.model.px4_mode == "AUTO.MISSION":
+            self._start_deadline = None
+            self.model.mission_running = True
+            self._set_status("Mission läuft")
+            self._next_state = MainState.AIRBORNE
+            return True
+
+        if time.time() > self._start_deadline:
+            self._start_deadline = None
+            self._set_sub("IDLE")
+            self._set_status("Missionsstart abgelehnt (PX4 nicht armed / kein AUTO.MISSION)")
+        return False
 
     # ------------------------------------------------------------
     # Anzeige

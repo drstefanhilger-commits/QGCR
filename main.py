@@ -3,6 +3,7 @@
 import threading
 import time
 import argparse
+import gc
 import os
 import traceback
 import tkinter as tk
@@ -58,6 +59,10 @@ class Application:
 
         self.root.rowconfigure(0, weight=1)
         self.root.columnconfigure(0, weight=1)
+
+        # Fenster schließen (X) → PX4/Gazebo stoppen, dann beenden
+        self._shut_down = False
+        self.root.protocol("WM_DELETE_WINDOW", self.shutdown)
 
         # ------------------------------------------------------------
         # Registry + Model
@@ -161,6 +166,8 @@ class Application:
             or getattr(self.connection.master, "target_system", 0) == 0
             or not getattr(self.model, "px4_connected", False)
         ):
+            if self._stop:
+                return
             time.sleep(0.05)
 
         # model.mission bleibt MissionData – der Service kommt nach model.mission_ms
@@ -189,8 +196,45 @@ class Application:
 
         time.sleep(0.1)
 
+    def shutdown(self):
+        """
+        QGCR beenden: Threads + Verbindung stoppen, von QGCR gestartetes
+        PX4/Gazebo beenden, Fenster schließen. Mehrfacher Aufruf ist unschädlich.
+        """
+        if self._shut_down:
+            return
+        self._shut_down = True
+
+        self.stop()
+
+        # Alle App-Threads beenden lassen, bevor Tk-Objekte freigegeben werden:
+        # Tcl bricht ab, wenn Tk-Objekte in einem Nicht-Hauptthread aufgeräumt werden.
+        for thread in (getattr(self, "update_thread", None), getattr(self, "_conn_thread", None)):
+            if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+                thread.join(timeout=2.0)
+
+        starter = getattr(self.model, "startup_controller", None)
+        if starter is not None and hasattr(starter, "stop_all"):
+            try:
+                starter.stop_all()
+            except Exception as e:
+                print("PX4 stop error:", e)
+
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+        # Tk-Reste jetzt im Hauptthread einsammeln (nicht später in einem anderen Thread)
+        gc.collect()
+
 
 if __name__ == "__main__":
     args = parse_args()
     app = Application(model_name=args.model)
-    app.root.mainloop()
+    try:
+        app.root.mainloop()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        app.shutdown()

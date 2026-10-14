@@ -7,7 +7,7 @@ from tkinter import ttk
 class HomeTab(ttk.Frame):
     """
     Home-Tab mit:
-    - Button-Leiste (Arm, Disarm, Takeoff, Land, Reset) + Modellauswahl
+    - Button-Leiste (Arm, Disarm, Takeoff, Land, Mission, Reset) + Modellauswahl
     - Canvas (Map/Plot Platzhalter)
     """
 
@@ -48,6 +48,13 @@ class HomeTab(ttk.Frame):
             command=lambda: self.controller.handle_button_event("LAND")
         )
         self.land_button.pack(side=tk.LEFT, padx=5)
+
+        # Mission im Flug starten (AUTO.MISSION)
+        self.mission_button = ttk.Button(
+            frame, text="MISSION",
+            command=lambda: self.controller.handle_button_event("MISSION_START")
+        )
+        self.mission_button.pack(side=tk.LEFT, padx=5)
 
         # RESET Button
         self.reset_button = ttk.Button(

@@ -87,6 +87,10 @@ class TestViewHomeTabModelSelector(unittest.TestCase):
 
         self.ctrl.request_model_change.assert_called_once_with("gz_fsl_rocket_vtol")
 
+    def test_mission_button_sends_event(self):
+        self.tab.mission_button.invoke()
+        self.ctrl.handle_button_event.assert_called_once_with("MISSION_START")
+
     def test_set_model(self):
         self.tab.set_model("gz_fsl_rocket_vtol", enabled=False)
 

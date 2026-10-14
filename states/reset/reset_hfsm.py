@@ -140,6 +140,7 @@ class ResetHFSM(BaseHFSM):
                 self.model.startup_controller = None
             if hasattr(self.model, "reset_heartbeat"):
                 self.model.reset_heartbeat()
+            self.model.mission_running = False
             if hasattr(self.model, "px4_pids"):
                 self.model.px4_pids = {}
             if hasattr(self.model, "px4_pid"):

@@ -141,6 +141,13 @@ class Connection:
 
     def close(self):
         self._stop = True
+
+        # Threads zuerst beenden lassen (RX: recv-Timeout 1 s, GCS-Heartbeat: 1 s Takt),
+        # dann den Socket schließen – sonst "Bad file descriptor" im RX-Thread
+        for thread in (self._rx_thread, self._gcs_hb_thread):
+            if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+                thread.join(timeout=2.0)
+
         try:
             if self.master:
                 self.master.close()

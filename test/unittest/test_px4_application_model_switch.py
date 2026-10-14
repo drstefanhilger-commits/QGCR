@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_px4_application_model_switch.py ===
 
+import gc
 import os
 import subprocess
 import tempfile
@@ -38,12 +39,10 @@ class TestPX4ApplicationModelSwitch(unittest.TestCase):
         self.model.base_path = self.tmp.name       # Reset-Backup nicht ins cwd
 
     def tearDown(self):
-        self.app.stop()
-        starter = getattr(self.model, "startup_controller", None)
-        if starter is not None:
-            starter.stop_all()
+        self.app.shutdown()
         PX4Sitl._kill_leftovers()
-        self.app.root.destroy()
+        del self.app
+        gc.collect()
         self.tmp.cleanup()
         self._print.stop()
         self._env.stop()

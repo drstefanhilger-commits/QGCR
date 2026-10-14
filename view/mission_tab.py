@@ -51,6 +51,17 @@ class MissionTab(ttk.Frame):
         self.btn_stop.pack(side=tk.LEFT, padx=4)
 
         # ------------------------------------------------------------
+        # Mission starten (armt + AUTO.MISSION)
+        # ------------------------------------------------------------
+        self.btn_start = ttk.Button(
+            button_frame,
+            text="Start",
+            command=lambda: self.controller.handle_button_event("MISSION_START"),
+            state="disabled"
+        )
+        self.btn_start.pack(side=tk.LEFT, padx=12)
+
+        # ------------------------------------------------------------
         # Home Position
         # ------------------------------------------------------------
         self.lbl_home = ttk.Label(self, text="Home: -")
@@ -77,11 +88,12 @@ class MissionTab(ttk.Frame):
     # ------------------------------------------------------------
     # Öffentliche API
     # ------------------------------------------------------------
-    def set_enabled(self, upload: bool, download: bool, stop: bool):
-        """Aktiviert/Deaktiviert Upload/Download/Stop Buttons."""
+    def set_enabled(self, upload: bool, download: bool, stop: bool, start: bool = False):
+        """Aktiviert/Deaktiviert Upload/Download/Stop/Start Buttons."""
         self.btn_upload["state"] = "normal" if upload else "disabled"
         self.btn_download["state"] = "normal" if download else "disabled"
         self.btn_stop["state"] = "normal" if stop else "disabled"
+        self.btn_start["state"] = "normal" if start else "disabled"
 
     def show_mission(self, data):
         """

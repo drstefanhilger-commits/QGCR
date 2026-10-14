@@ -27,7 +27,7 @@ class TestMainConnectLoop(unittest.TestCase):
         self.connection = MagicMock()
         self.connection.master = master
 
-        self.app = SimpleNamespace(model=self.model, connection=self.connection)
+        self.app = SimpleNamespace(model=self.model, connection=self.connection, _stop=False)
 
     @patch("builtins.print")
     def run_connect_loop(self, _print):
@@ -48,6 +48,19 @@ class TestMainConnectLoop(unittest.TestCase):
         self.assertIs(self.model.services.mission, self.model.mission_ms)
         self.assertEqual(self.model.mission_ms.target_system, 1)
         self.assertEqual(self.model.mission_ms.target_component, 1)
+
+    def test_connect_loop_ends_on_stop_without_px4(self):
+        import threading
+        self.model.px4_connected = False          # PX4 meldet sich nie
+        self.app._stop = False
+
+        t = threading.Thread(target=self.run_connect_loop, daemon=True)
+        t.start()
+        self.app._stop = True
+        t.join(2.0)
+
+        self.assertFalse(t.is_alive())
+        self.assertNotIsInstance(self.model.mission_ms, MissionMicroService)
 
     def test_mission_view_data_still_works(self):
         from QGCR.controller.gui_controller import GUIController
@@ -106,6 +119,32 @@ class TestMainApplicationInit(unittest.TestCase):
 
     def tearDown(self):
         self.app.root.destroy()
+
+    def test_shutdown_stops_px4_and_closes(self):
+        starter = MagicMock()
+        self.app.model.startup_controller = starter
+        self.app.connection = MagicMock()
+
+        with patch.object(self.app.root, "destroy") as destroy:
+            self.app.shutdown()
+            self.app.shutdown()                  # zweiter Aufruf ohne Wirkung
+
+        self.assertTrue(self.app._stop)
+        self.app.connection.close.assert_called_once()
+        starter.stop_all.assert_called_once()
+        destroy.assert_called_once()
+
+    def test_window_close_calls_shutdown(self):
+        """Klick auf X (WM_DELETE_WINDOW) fährt QGCR herunter."""
+        starter = MagicMock()
+        self.app.model.startup_controller = starter
+
+        with patch.object(self.app.root, "destroy") as destroy:
+            self.app.root.tk.call(self.app.root.protocol("WM_DELETE_WINDOW"))
+
+        self.assertTrue(self.app._shut_down)
+        starter.stop_all.assert_called_once()
+        destroy.assert_called_once()
 
     def test_cleanup_runs_first(self):
         self.cleanup.run_full_cleanup.assert_called_once()

@@ -18,6 +18,8 @@ MAKEFILE = (
     "print('DONE', flush=True)\"\n"
     "gz_fake:\n"
     "\t@true\n"
+    "stdin_check:\n"
+    "\t@readlink /proc/self/fd/0\n"
 )
 
 
@@ -58,6 +60,30 @@ class TestSimPX4SwarmStarter(unittest.TestCase):
         lines = self.px4_logs(model, "[PX4-1] DONE")
         self.assertEqual(lines[-1], "[PX4-1] DONE")
         self.assertEqual(sum(1 for l in lines if l.startswith("[PX4-1] EEE")), 5000)
+
+    def test_px4_does_not_inherit_terminal_stdin(self, _print):
+        model = DummyModel()
+        cfg = PX4InstanceConfig(self.tmp.name, "stdin_check", instance_id=1, verbose=False)
+        starter = PX4SwarmStarter([cfg], model=model)
+        starter.start_all()
+        starter.processes[1].wait(timeout=10)
+
+        # eigene Pipe – weder Terminal noch /dev/null (pxh würde bei EOF endlos Prompts ausgeben)
+        lines = self.px4_logs(model, "never", timeout=3)
+        stdin_lines = [l for l in lines if l.startswith("[PX4-1] /") or l.startswith("[PX4-1] pipe:")]
+        self.assertEqual(len(stdin_lines), 1, lines)
+        self.assertTrue(stdin_lines[0].startswith("[PX4-1] pipe:"), stdin_lines[0])
+
+    def test_stop_closes_stdin(self, _print):
+        cfg = PX4InstanceConfig(self.tmp.name, "gz_fake", instance_id=1, verbose=False)
+        starter = PX4SwarmStarter([cfg], model=DummyModel())
+        starter.start_all()
+        proc = starter.processes[1]
+
+        with patch("QGCR.sim.px4_swarm_starter.subprocess.run"):
+            starter.stop_all()
+
+        self.assertTrue(proc.stdin.closed)
 
     def test_without_logger_output_is_discarded(self, _print):
         starter = PX4SwarmStarter([self.cfg], model=None)

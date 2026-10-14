@@ -128,8 +128,18 @@ class TestControllerGUIControllerMission(unittest.TestCase):
 
         self.gui.update_mission_tab()
 
-        window.mission_tab.set_enabled.assert_called_once_with(upload=True, download=True, stop=False)
+        window.mission_tab.set_enabled.assert_called_once_with(upload=True, download=True, stop=False, start=False)
         window.mission_tab.show_mission.assert_called_once()
+
+    def test_update_mission_tab_start_needs_mission(self, _print):
+        window = MagicMock()
+        self.gui.main_window = window
+        self.model.mission_ms = MagicMock()
+        self.model.mission.ready = True
+
+        self.gui.update_mission_tab()
+
+        window.mission_tab.set_enabled.assert_called_once_with(upload=True, download=True, stop=False, start=True)
 
     def test_update_mission_tab_stop_only_during_transfer(self, _print):
         window = MagicMock()
@@ -142,7 +152,7 @@ class TestControllerGUIControllerMission(unittest.TestCase):
                 self.model.hfsm_sub = sub
                 self.gui.update_mission_tab()
                 window.mission_tab.set_enabled.assert_called_once_with(
-                    upload=False, download=False, stop=True)
+                    upload=False, download=False, stop=True, start=False)
 
     def test_update_mission_tab_disables_buttons(self, _print):
         window = MagicMock()
@@ -155,7 +165,7 @@ class TestControllerGUIControllerMission(unittest.TestCase):
                 self.model.hfsm_main, self.model.hfsm_sub, self.model.mission_ms = main, sub, ms
                 self.gui.update_mission_tab()
                 window.mission_tab.set_enabled.assert_called_once_with(
-                    upload=False, download=False, stop=False)
+                    upload=False, download=False, stop=False, start=False)
 
 
 @patch("builtins.print")

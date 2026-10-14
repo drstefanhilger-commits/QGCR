@@ -40,6 +40,9 @@
 # Setup Ubuntu 24.04
 
 Ubuntu 24.04 verbietet `pip install` ins System-Python (PEP 668), daher venv verwenden.
+
+Beenden: Fenster schließen (X) oder Strg+C im Terminal – QGCR beendet dabei das von ihm gestartete
+PX4/Gazebo. PX4 erhält eine eigene stdin-Pipe, damit die PX4-Shell das Terminal nicht übernimmt.
 `tkinter` ist unter 24.04 nicht vorinstalliert.
 
 ```bash
@@ -207,8 +210,8 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 |---|---|---|
 | `STARTUP` | `StartupHFSM` | Enter: `PX4SwarmStarter(model.vehicle_configs).start_all()` (oder vorhandenen `model.startup_controller` wiederverwenden). → `READY`, sobald `connection_ready()` und `heartbeat_ok()` |
 | `READY` | `ReadyHFSM` | Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, Mission-Tab aktiv (`model.active_tab`) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
-| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `RESET` → RESET, Verbindung verloren → RESET |
-| `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
+| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `MISSION_START` (HomeTab „MISSION“) → AUTO.MISSION im Flug (`hfsm_sub` MISSION). Läuft eine Mission (auch vom Boden gestartet), startet AIRBORNE keinen eigenen Takeoff; endet sie mit Landung (PX4 disarmt) → READY. `RESET` → RESET, Verbindung verloren → RESET |
+| `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). `MISSION_START` (Button „Start“) → `MAV_CMD_MISSION_START` (PX4 armt + AUTO.MISSION, `hfsm_sub` START); sobald armed und AUTO.MISSION → AIRBORNE mit `model.mission_running`, sonst nach 10 s Statusmeldung. Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, Heartbeat-Status verwerfen (`model.reset_heartbeat()`), `reset_done=True` → STARTUP |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
 
@@ -251,7 +254,12 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
 - Tab-Wechsel (`<<NotebookTabChanged>>`) → `GUIController.on_tab_changed()` → `model.active_tab`.
   READY / MISSION werten `active_tab` zustandsbasiert aus (kein Event, das verloren gehen kann).
 - MissionTab: Upload öffnet einen Datei-Dialog (QGC `.plan`, `model/mission_parser.py`) →
-  `model.mission_upload_items` → `MISSION_UPLOAD`; Download → `MISSION_DOWNLOAD`; Stop → `MISSION_STOP`.
+  `model.mission_upload_items` → `MISSION_UPLOAD`; Download → `MISSION_DOWNLOAD`; Stop → `MISSION_STOP`;
+  Start → `MISSION_START` (nur in MISSION/IDLE mit Mission im Model). Die Mission muss eine Landung
+  enthalten (PX4 `MIS_TKO_LAND_REQ = 2` für Fixed-Wing und VTOL).
+  Bekannt (PX4-seitig, SITL): `gz_rc_cessna` bricht die Missionslandung mit Landemuster ab
+  („Holding at .. m above landing waypoint“) und kreist; dann mit LAND landen. `gz_fsl_rocket_vtol`
+  landet die Mission selbst.
   `gui_tick` aktiviert Upload/Download nur in MISSION/IDLE, Stop nur während eines Transfers, und zeigt
   Home, Wegpunkte und `model.mission_status`
 
