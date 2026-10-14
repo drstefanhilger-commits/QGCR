@@ -66,7 +66,7 @@ class StartupHomeFSM(BaseFSM):
         # 1) Heartbeat verloren → zurück zu STARTUP_HEARTBEAT
         if self._lost_heartbeat:
             try:
-                self.model.log.qgcr("...")
+                self.model.log.qgcr("[STARTUP_HOME] Heartbeat verloren → STARTUP_HEARTBEAT")
                 self.model.queue_registry.require("gui").push(
                     ("status", "Startup: Home-Schritt abgebrochen (Heartbeat verloren)")
                 )

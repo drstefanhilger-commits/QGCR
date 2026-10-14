@@ -46,6 +46,8 @@ class TestStartupHomeFSM(unittest.TestCase):
         self.set_home()
 
         self.assertEqual(self.fsm.on_update(), StartupSubState.STARTUP_HEARTBEAT)
+        self.assertIn("[QGCR] [STARTUP_HOME] Heartbeat verloren → STARTUP_HEARTBEAT", self.model.qgcr_logs())
+        self.assertIn(("status", "Startup: Home-Schritt abgebrochen (Heartbeat verloren)"), self.model.gui_items())
 
 
 if __name__ == "__main__":
