@@ -63,11 +63,15 @@ class PX4SwarmStarter:
                     f"with target '{cfg.model_name}' on UDP {mavlink_port}"
                 )
 
+            # stderr in stdout zusammenführen: EIN Lese-Thread, keine volle stderr-Pipe.
+            # Ohne Logger keine Pipe (würde nie gelesen und PX4 irgendwann blockieren).
+            log_output = bool(self.model and hasattr(self.model, "log"))
+
             proc = subprocess.Popen(
                 cmd,
                 cwd=cfg.px4_dir,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE if log_output else subprocess.DEVNULL,
+                stderr=subprocess.STDOUT if log_output else subprocess.DEVNULL,
                 preexec_fn=os.setsid,
                 env=env
             )
@@ -89,7 +93,7 @@ class PX4SwarmStarter:
             if cfg.verbose:
                 print(f"[PX4SwarmStarter] PX4[{cfg.instance_id}] started (PID={proc.pid}).")
 
-            if self.model and hasattr(self.model, "log"):
+            if log_output:
                 threading.Thread(
                     target=self._stream_output,
                     args=(cfg.instance_id, proc),
@@ -100,13 +104,11 @@ class PX4SwarmStarter:
     # LOG STREAM
     # ------------------------------------------------------------
     def _stream_output(self, instance_id, proc):
-        if proc.stdout:
+        """
+        Liest stdout (inkl. stderr) zeilenweise bis EOF ins PX4-Log.
+        """
+        with proc.stdout:
             for line in proc.stdout:
-                text = line.decode(errors="ignore").rstrip()
-                self.model.log.px4(instance_id, text)
-
-        if proc.stderr:
-            for line in proc.stderr:
                 text = line.decode(errors="ignore").rstrip()
                 self.model.log.px4(instance_id, text)
 

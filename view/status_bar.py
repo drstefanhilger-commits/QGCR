@@ -37,6 +37,16 @@ class StatusBar(ttk.Frame):
         )
         self.label.grid(row=0, column=0, sticky="ew")
 
+        # Letzte Statusmeldung (rechts)
+        self.message_var = tk.StringVar(value="")
+        self.message_label = ttk.Label(
+            self,
+            textvariable=self.message_var,
+            anchor="e",
+            padding=(8, 3)
+        )
+        self.message_label.grid(row=0, column=1, sticky="e")
+
         # Layout
         self.grid_columnconfigure(0, weight=1)
 
@@ -68,6 +78,10 @@ class StatusBar(ttk.Frame):
     #     """Heartbeat-Counter erhöhen (wird vom MAVLink-Thread aufgerufen)."""
     #     self.hb_counter += 1
     #     self._update_text()
+
+    def set_message(self, text: str):
+        """Letzte Statusmeldung anzeigen."""
+        self.message_var.set(text)
 
     def spin(self):
         """Spinner einen Schritt weiterdrehen."""

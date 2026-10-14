@@ -138,6 +138,37 @@ class GUIController:
         self.model.log.qgcr(text)
 
     # ------------------------------------------------------------
+    # GUI-Queue → Anzeige (aus gui_tick, Tk-Thread)
+    # ------------------------------------------------------------
+    def process_gui_queue(self):
+        """
+        ("status", text) → StatusBar (letzte Meldung) + QGCR-Log
+        ("log", text)    → QGCR-Log
+        Telemetrie/State-Updates werden verworfen (gui_tick liest das Model direkt).
+        """
+        window = self.main_window
+        status_bar = getattr(window, "status_bar", None) if window else None
+        log_tab = getattr(window, "log_tab", None) if window else None
+
+        for item in self.queue_registry.require("gui").pop_all():
+            try:
+                tag, payload = item
+            except (TypeError, ValueError):
+                continue
+
+            match tag:
+                case "status":
+                    if status_bar:
+                        status_bar.set_message(str(payload))
+                    if log_tab:
+                        log_tab.append_qgcr(f"[STATUS] {payload}")
+                case "log":
+                    if log_tab:
+                        log_tab.append_qgcr(str(payload))
+                case _:
+                    pass
+
+    # ------------------------------------------------------------
     # Mission-Upload: .plan wählen → laden → Event an MissionHFSM
     # ------------------------------------------------------------
     def request_mission_upload(self, path=None):
@@ -253,6 +284,11 @@ class GUIController:
             msg = self.queue_registry.qgcr_log_queue.get()
             if self.main_window and self.main_window.log_tab:
                 self.main_window.log_tab.append_qgcr(msg)
+
+        # ------------------------------------------------------------
+        # GUI-Queue (Status-/Log-Meldungen) leeren
+        # ------------------------------------------------------------
+        self.process_gui_queue()
 
         # ------------------------------------------------------------
         # Statusbar aktualisieren

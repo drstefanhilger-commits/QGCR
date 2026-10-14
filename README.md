@@ -105,7 +105,7 @@ Tk-Mainloop (GUI):      Buttons → GUIController.handle_button_event() → mode
 
 | Komponente | Datei | Aufgabe |
 |---|---|---|
-| `QueueRegistry` | `core/queue_registry.py` | System-Queues `telemetry`, `fsm`, `mission`, `gui` (Ring-Buffer, max. 500 Einträge – wird derzeit nicht konsumiert) + Log-Queues `px4_log_queue`, `sim_log_queue`, `qgcr_log_queue` |
+| `QueueRegistry` | `core/queue_registry.py` | System-Queues `telemetry`, `fsm`, `mission`, `gui` (Ring-Buffer, max. 500 Einträge, von `gui_tick` geleert) + Log-Queues `px4_log_queue`, `sim_log_queue`, `qgcr_log_queue` |
 | `Model` | `model/model.py` | Zentrale Datenhaltung (siehe unten) |
 | `LogRouter` | `logging/log_router.py` | `model.log.px4(id, text)`, `.sim(src, text)`, `.qgcr(text)` → Log-Queues |
 | `Connection` | `communication/connection.py` | MAVLink über Port #0, RX- und GCS-Heartbeat-Thread |
@@ -113,7 +113,7 @@ Tk-Mainloop (GUI):      Buttons → GUIController.handle_button_event() → mode
 | `MicroServiceController` | `controller/microservice_controller.py` | Erzeugt und tickt die MicroServices |
 | `MainController` | `controller/main_controller.py` | Tickt die aktive HFSM, wechselt HFSMs (kein FSM) |
 | `GUIController` | `controller/gui_controller.py` | Vermittelt zwischen GUI, Model und MainWindow |
-| `PX4SwarmStarter` | `sim/px4_swarm_starter.py` | Startet/stoppt PX4-SITL-Instanzen (`make px4_sitl gz_<modell>`) |
+| `PX4SwarmStarter` | `sim/px4_swarm_starter.py` | Startet/stoppt PX4-SITL-Instanzen (`make px4_sitl gz_<modell>`); stdout+stderr zusammen → PX4-Log |
 | `StartupCleanup` | `core/startup_cleanup.py` | Beendet PX4-/Gazebo-Reste, gibt Ports frei, löscht Gazebo-SHM |
 
 ## Model
@@ -233,6 +233,9 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
   `MISSION_DOWNLOAD`, `MISSION_VALIDATE`, `MISSION_STOP`, `RESET`, `STOP` → `model.hfsm_events`
 - `gui_tick()` (alle 500 ms): PX4-/Sim-/QGCR-Logs → `LogTab`, Model → `StatusBar`
   (HFSM, Sub-State, Mode, Armed, Heartbeat-Zähler, Spinner)
+- `gui`-Queue (`process_gui_queue()` in `gui_tick`): `("status", text)` → letzte Meldung rechts in der
+  `StatusBar` + `[STATUS] text` im QGCR-Log, `("log", text)` → QGCR-Log; Telemetrie/State-Updates werden
+  verworfen (direkt aus dem Model gelesen)
 - Tab-Wechsel (`<<NotebookTabChanged>>`) → `GUIController.on_tab_changed()` → `model.active_tab`.
   READY / MISSION werten `active_tab` zustandsbasiert aus (kein Event, das verloren gehen kann).
   `TabRouter` ist ohne Wirkung

@@ -42,6 +42,14 @@ class TestViewStatusBar(unittest.TestCase):
             "HFSM: READY    Sub: IDLE    Mode: AUTO    Armed: ARMED    HB: 42    Spin: |",
         )
 
+    def test_message(self):
+        self.assertEqual(self.bar.message_var.get(), "")
+
+        self.bar.set_message("ACK: 400 → 0")
+
+        self.assertEqual(self.bar.message_var.get(), "ACK: 400 → 0")
+        self.assertTrue(self.text().startswith("HFSM: -"))   # Statuszeile unverändert
+
     def test_spinner_wraps_around(self):
         frames = []
         for _ in range(4):

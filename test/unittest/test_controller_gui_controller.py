@@ -28,6 +28,35 @@ class TestControllerGUIController(unittest.TestCase):
         self.gui.handle_button_event("ARMM")
         self.assertEqual(len(self.model.hfsm_events), 0)
 
+    def test_process_gui_queue(self):
+        window = MagicMock()
+        self.gui.main_window = window
+        gui = self.model.queue_registry.require("gui")
+
+        gui.push(("telemetry", {"alt": 1.0}))
+        gui.push(("status", "Home set: 47.39774, 8.54559, 488.0 m"))
+        gui.push(("log", "READY_HEARTBEAT_LOST: Heartbeat lost"))
+        gui.push(("state_update", {}))
+        gui.push("kaputt")
+        gui.push(("status", "ACK: 400 → 0"))
+
+        self.gui.process_gui_queue()
+
+        window.status_bar.set_message.assert_called_with("ACK: 400 → 0")
+        self.assertEqual(window.status_bar.set_message.call_count, 2)
+        self.assertEqual(
+            [c.args[0] for c in window.log_tab.append_qgcr.call_args_list],
+            ["[STATUS] Home set: 47.39774, 8.54559, 488.0 m",
+             "READY_HEARTBEAT_LOST: Heartbeat lost",
+             "[STATUS] ACK: 400 → 0"],
+        )
+        self.assertEqual(gui.pop_all(), [])
+
+    def test_process_gui_queue_without_window_drains(self):
+        self.model.queue_registry.require("gui").push(("status", "x"))
+        self.gui.process_gui_queue()
+        self.assertEqual(self.model.queue_registry.require("gui").pop_all(), [])
+
     def test_tab_changed_sets_active_tab(self):
         self.gui.on_tab_changed("Log")
         self.assertEqual(self.model.active_tab, "Log")

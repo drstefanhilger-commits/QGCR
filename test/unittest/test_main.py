@@ -103,6 +103,20 @@ class TestMainApplicationInit(unittest.TestCase):
 
         takeoff.on_message.assert_called_once_with("COMMAND_ACK", msg)
 
+    def test_status_messages_reach_status_bar_and_log(self):
+        from QGCR.test.unittest.fake_mavlink import make_msg
+
+        self.app.model.on_command_ack(make_msg("COMMAND_ACK", command=400, result=0))
+        self.app.model.update_home_position(47.3977418, 8.5455939, 488.0)
+
+        self.app.gui_controller.gui_tick()
+
+        window = self.app.window
+        self.assertEqual(window.status_bar.message_var.get(), "Home set: 47.39774, 8.54559, 488.0 m")
+        log = window.log_tab.qgcr_text.get("1.0", "end")
+        self.assertIn("[STATUS] ACK: 400 → 0", log)
+        self.assertIn("[STATUS] Home set: 47.39774, 8.54559, 488.0 m", log)
+
     @patch("builtins.print")
     @patch("QGCR.states.startup.startup_hfsm.PX4SwarmStarter")
     def test_mission_tab_switches_ready_mission_ready(self, _starter, _print):
