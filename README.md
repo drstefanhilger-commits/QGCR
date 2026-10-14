@@ -119,24 +119,22 @@ HeartbeatMonitor(timeout_s=2.0)
 
 ---
 
-## 3. **Connection (EventRouter)**
-Die zentrale Kommunikationsschicht zwischen:
-
-- GUI  
-- FSMs  
-- HeartbeatMonitor  
-- MainStateMachine  
+## 3. **Connection**
+MAVLink-Verbindung zu PX4 über Port #0 (`udp:0.0.0.0:14550`).
 
 Aufgaben:
 
-- Weiterleitung eingehender Events  
-- Routing von Heartbeat‑Signalen  
-- Bereitstellung einer einheitlichen Connection‑API für alle Sub‑FSMs  
+- RX-Thread: HEARTBEAT, GLOBAL_POSITION_INT, HOME_POSITION, COMMAND_ACK → Model  
+- STATUSTEXT → PX4-Log  
+- alle übrigen Nachrichten (und COMMAND_ACK) → Dispatcher → MicroServices  
+- GCS-Heartbeat-Thread (1 Hz)  
 
 Signatur:
 
 ```python
-EventRouter(model, heartbeat_monitor)
+dispatcher = Dispatcher(model)
+connection = Connection(model, dispatcher)
+connection.connect()
 ```
 
 ---
@@ -289,12 +287,12 @@ Die Reihenfolge ist **zwingend**, da jede Schicht die darunterliegende benötigt
 
 1. `model = Model()`
 2. `heartbeat_monitor = HeartbeatMonitor()`
-3. `connection = EventRouter(model, heartbeat_monitor)`
+3. `dispatcher = Dispatcher(model)`, `connection = Connection(model, dispatcher)`
 4. `system_sm = MainStateMachine(model, connection)`
 5. Sub‑FSMs erzeugen (Startup, Takeoff, Mission)
 6. HFSMs zusammensetzen
 7. `ready_sm = ReadyHFSM()`
-8. `dispatcher = Dispatcher(...)`
+8. *(entfällt – Dispatcher wird in Schritt 3 erzeugt)*
 9. `controller = GUIController(model, ready_sm, dispatcher)`
 10. `MainWindow(controller).mainloop()`
 
