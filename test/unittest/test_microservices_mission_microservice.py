@@ -1,56 +1,208 @@
 #!/usr/bin/env python3
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_microservices_mission_microservice.py ===
+
+import queue
+import threading
 import unittest
-from unittest.mock import MagicMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from pymavlink import mavutil
+
+from QGCR.communication.connection import Connection
+from QGCR.communication.dispatcher import Dispatcher
 from QGCR.communication.microservices.mission_microservice import MissionMicroService
+from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.test.unittest.fake_mavlink import make_msg
+from QGCR.test.utils.mission_item_builder import make_waypoint
 
 
-class TestMicroservicesMissionMicroservice(unittest.TestCase):
+ACCEPTED = mavutil.mavlink.MAV_MISSION_ACCEPTED
 
-    def test_upload_sequence(self):
-        master = MagicMock()
-        master.recv_match = MagicMock()
 
-        item0 = MagicMock(seq=0, frame=0, command=16, current=0,
-                          autocontinue=1, param1=0, param2=0, param3=0,
-                          param4=0, x=100000000, y=100000000, z=10)
+class FakePX4:
+    """
+    Simulierter PX4-Missionsmanager hinter einem MAVLink-Master.
+    Antworten auf gesendete Nachrichten landen in einer Queue, die nur über
+    recv_match() (also vom RX-Thread der Connection) gelesen werden kann.
+    """
 
-        item1 = MagicMock(seq=1, frame=0, command=16, current=0,
-                          autocontinue=1, param1=0, param2=0, param3=0,
-                          param4=0, x=200000000, y=200000000, z=20)
+    def __init__(self, stored_items=0):
+        self.inbox = queue.Queue()
+        self.uploaded = {}
+        self.upload_count = None
+        self.stored = [SimpleNamespace(seq=i) for i in range(stored_items)]
+        self.recv_threads = set()
+        self.target_system = 1
+        self.target_component = 1
 
-        mission = [item0, item1]
+        self.mav = MagicMock()
+        self.mav.mission_count_send.side_effect = self._on_count
+        self.mav.mission_item_int_send.side_effect = self._on_item
+        self.mav.mission_request_list_send.side_effect = self._on_request_list
+        self.mav.mission_request_int_send.side_effect = self._on_request_int
 
-        master.recv_match.side_effect = [
-            MagicMock(get_type=lambda: "MISSION_REQUEST_INT", seq=0),
-            MagicMock(get_type=lambda: "MISSION_REQUEST_INT", seq=1),
-            MagicMock(get_type=lambda: "MISSION_ACK", type=0),
-        ]
+    # PX4 → GCS
+    def _reply(self, msg_type, **fields):
+        self.inbox.put(make_msg(msg_type, **fields))
 
-        ms = MissionMicroService(master, 1, 1)
-        ms.upload(mission)
+    def recv_match(self, *args, **kwargs):
+        self.recv_threads.add(threading.current_thread().name)
+        try:
+            return self.inbox.get(timeout=kwargs.get("timeout") or 0.05)
+        except queue.Empty:
+            return None
 
-        master.mav.mission_count_send.assert_called_with(1, 1, 2)
-        self.assertEqual(master.mav.mission_item_int_send.call_count, 2)
+    def close(self):
+        pass
 
-    def test_download_sequence(self):
-        master = MagicMock()
-        master.recv_match = MagicMock()
+    # GCS → PX4
+    def _on_count(self, tsys, tcomp, count):
+        self.upload_count = count
+        self._reply("MISSION_REQUEST_INT", seq=0)
 
-        mission_count_msg = MagicMock(count=2)
-        mission_item0 = MagicMock(seq=0)
-        mission_item1 = MagicMock(seq=1)
+    def _on_item(self, tsys, tcomp, seq, *rest):
+        self.uploaded[seq] = rest
+        if seq + 1 < self.upload_count:
+            self._reply("MISSION_REQUEST_INT", seq=seq + 1)
+        else:
+            self._reply("MISSION_ACK", type=ACCEPTED)
 
-        master.recv_match.side_effect = [
-            mission_count_msg,
-            mission_item0,
-            mission_item1,
-        ]
+    def _on_request_list(self, tsys, tcomp):
+        self._reply("MISSION_COUNT", count=len(self.stored))
 
-        ms = MissionMicroService(master, 1, 1)
-        mission = ms.download()
+    def _on_request_int(self, tsys, tcomp, seq):
+        self._reply("MISSION_ITEM_INT", seq=seq)
 
-        self.assertEqual(len(mission), 2)
-        master.mav.mission_request_list_send.assert_called_once()
+
+def waypoints(n):
+    return [make_waypoint(i, 47.0 + i * 0.001, 8.0, 10 + i) for i in range(n)]
+
+
+class TestMissionMicroServiceUnit(unittest.TestCase):
+    """
+    Service ohne Connection: Antworten werden direkt per on_message() eingespeist.
+    """
+
+    def setUp(self):
+        self.master = MagicMock()
+        self.ms = MissionMicroService(self.master, 1, 1, timeout=0.2)
+
+    def feed(self, msg_type, **fields):
+        self.ms.on_message(msg_type, make_msg(msg_type, **fields))
+
+    @patch("builtins.print")
+    def test_upload_sequence(self, _print):
+        mission = waypoints(2)
+        self.master.mav.mission_count_send.side_effect = \
+            lambda *a: self.feed("MISSION_REQUEST_INT", seq=0)
+        self.master.mav.mission_item_int_send.side_effect = \
+            lambda t, c, seq, *r: (self.feed("MISSION_REQUEST_INT", seq=1) if seq == 0
+                                   else self.feed("MISSION_ACK", type=ACCEPTED))
+
+        self.assertTrue(self.ms.upload(mission))
+
+        self.master.mav.mission_count_send.assert_called_with(1, 1, 2)
+        self.assertEqual(self.master.mav.mission_item_int_send.call_count, 2)
+        self.master.recv_match.assert_not_called()
+
+    @patch("builtins.print")
+    def test_upload_rejected(self, _print):
+        self.master.mav.mission_count_send.side_effect = \
+            lambda *a: self.feed("MISSION_ACK", type=mavutil.mavlink.MAV_MISSION_ERROR)
+
+        self.assertFalse(self.ms.upload(waypoints(1)))
+
+    @patch("builtins.print")
+    def test_upload_timeout(self, _print):
+        self.assertFalse(self.ms.upload(waypoints(1)))
+
+    @patch("builtins.print")
+    def test_upload_invalid_seq(self, _print):
+        self.master.mav.mission_count_send.side_effect = \
+            lambda *a: self.feed("MISSION_REQUEST_INT", seq=5)
+
+        self.assertFalse(self.ms.upload(waypoints(1)))
+        self.master.mav.mission_item_int_send.assert_not_called()
+
+    @patch("builtins.print")
+    def test_download_sequence(self, _print):
+        self.master.mav.mission_request_list_send.side_effect = \
+            lambda *a: self.feed("MISSION_COUNT", count=2)
+        self.master.mav.mission_request_int_send.side_effect = \
+            lambda t, c, seq: self.feed("MISSION_ITEM_INT", seq=seq)
+
+        mission = self.ms.download()
+
+        self.assertEqual([m.seq for m in mission], [0, 1])
+        self.master.mav.mission_request_list_send.assert_called_once()
+        self.master.mav.mission_ack_send.assert_called_once_with(1, 1, ACCEPTED)
+        self.master.recv_match.assert_not_called()
+
+    @patch("builtins.print")
+    def test_download_skips_wrong_seq(self, _print):
+        self.master.mav.mission_request_list_send.side_effect = \
+            lambda *a: self.feed("MISSION_COUNT", count=1)
+
+        def answer(t, c, seq):
+            self.feed("MISSION_ITEM_INT", seq=7)      # Duplikat/alt
+            self.feed("MISSION_ITEM_INT", seq=seq)
+
+        self.master.mav.mission_request_int_send.side_effect = answer
+
+        self.assertEqual([m.seq for m in self.ms.download()], [0])
+
+    @patch("builtins.print")
+    def test_download_timeout(self, _print):
+        self.assertEqual(self.ms.download(), [])
+        self.master.mav.mission_ack_send.assert_not_called()
+
+    @patch("builtins.print")
+    def test_stale_messages_are_discarded(self, _print):
+        self.feed("MISSION_ACK", type=ACCEPTED)        # Rest eines alten Transfers
+        self.assertFalse(self.ms.upload(waypoints(1)))  # → Timeout statt falschem ACK
+
+    def test_non_mission_messages_are_ignored(self):
+        self.ms.on_message("HEARTBEAT", make_msg("HEARTBEAT"))
+        self.assertTrue(self.ms._rx.empty())
+
+
+class TestMissionMicroServiceWithConnection(unittest.TestCase):
+    """
+    Echter RX-Thread der Connection liest, Dispatcher liefert an model.mission_ms.
+    """
+
+    def setUp(self):
+        self.model = DummyModel()
+        self.px4 = FakePX4(stored_items=3)
+
+        with patch("QGCR.communication.connection.mavutil.mavlink_connection",
+                   return_value=self.px4):
+            self.conn = Connection(self.model, Dispatcher(self.model))
+            self.conn.connect()
+
+        self.model.mission_ms = MissionMicroService(self.px4, 1, 1, timeout=2.0)
+
+    def tearDown(self):
+        self.conn.close()
+        self.conn._rx_thread.join(2)
+
+    @patch("builtins.print")
+    def test_upload_via_rx_thread(self, _print):
+        self.assertTrue(self.model.mission_ms.upload(waypoints(4)))
+        self.assertEqual(sorted(self.px4.uploaded), [0, 1, 2, 3])
+
+    @patch("builtins.print")
+    def test_download_via_rx_thread(self, _print):
+        mission = self.model.mission_ms.download()
+        self.assertEqual([m.seq for m in mission], [0, 1, 2])
+
+    @patch("builtins.print")
+    def test_only_rx_thread_reads(self, _print):
+        self.model.mission_ms.upload(waypoints(2))
+        self.model.mission_ms.download()
+
+        self.assertEqual(self.px4.recv_threads, {self.conn._rx_thread.name})
 
 
 if __name__ == "__main__":

@@ -157,6 +157,10 @@ Nicht-blockierend mit `start()` / `tick()` / `on_message()` und den Flags `done`
 Zusätzlich erzeugt der Connect-Thread nach dem ersten PX4-Heartbeat einen synchronen
 `MissionMicroService` (`communication/microservices/mission_microservice.py`, `upload()` / `download()`)
 als `model.mission_ms` (= `model.services.mission`). `model.mission` bleibt immer die `MissionData`.
+Der Service liest **nicht** selbst von der Verbindung: Mission-Nachrichten kommen über den Dispatcher
+(`on_message`) in eine Queue, `upload()` / `download()` warten darauf (Timeout je Nachricht).
+Beide blockieren und dürfen nicht aus dem RX-Thread aufgerufen werden.
+Grundregel: Nur der RX-Thread der Connection ruft `recv_match()` auf.
 
 ---
 

@@ -7,29 +7,93 @@ MAVLink Mission MicroService:
 - Upload
 - Download
 
-Wird von StartupHFSM und MissionHFSM verwendet.
+Liest NICHT selbst von der MAVLink-Verbindung (das macht ausschließlich der
+RX-Thread der Connection). Mission-Nachrichten kommen über den Dispatcher
+(on_message) in eine thread-sichere Queue, upload()/download() warten darauf.
+
+upload()/download() blockieren bis zum Ende bzw. Timeout und dürfen daher
+NICHT aus dem RX-Thread (Dispatcher-Callback) aufgerufen werden.
 """
+
+import queue
+import time
 
 from pymavlink import mavutil
 
 
 class MissionMicroService:
-    def __init__(self, master, target_system, target_component, model=None):
+
+    MISSION_MSG_TYPES = {
+        "MISSION_COUNT",
+        "MISSION_ITEM_INT",
+        "MISSION_REQUEST",
+        "MISSION_REQUEST_INT",
+        "MISSION_ACK",
+    }
+
+    def __init__(self, master, target_system, target_component, model=None, timeout=3.0):
         """
-        master:           pymavlink MAVLink connection
+        master:           pymavlink MAVLink connection (nur zum Senden)
         target_system:    Ziel-System-ID (PX4)
         target_component: Ziel-Komponenten-ID
         model:            optional, für GUI-Events (queue_registry)
+        timeout:          max. Wartezeit pro erwarteter Nachricht [s]
         """
         self.master = master
         self.target_system = target_system
         self.target_component = target_component
         self.model = model
+        self.timeout = timeout
+
+        self._rx = queue.Queue()
+
+    # ------------------------------------------------------------
+    # Dispatcher Hook (läuft im RX-Thread der Connection)
+    # ------------------------------------------------------------
+    def on_message(self, msg_type, msg):
+        if msg_type in self.MISSION_MSG_TYPES:
+            self._rx.put(msg)
+
+    # ------------------------------------------------------------
+    # Empfangs-Helfer
+    # ------------------------------------------------------------
+    def _clear_rx(self):
+        """Veraltete Nachrichten aus früheren Transfers verwerfen."""
+        while True:
+            try:
+                self._rx.get_nowait()
+            except queue.Empty:
+                return
+
+    def _wait_for(self, types, timeout=None):
+        """
+        Wartet auf die nächste Nachricht eines der Typen.
+        Andere Mission-Nachrichten werden verworfen. None bei Timeout.
+        """
+        deadline = time.monotonic() + (self.timeout if timeout is None else timeout)
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+
+            try:
+                msg = self._rx.get(timeout=remaining)
+            except queue.Empty:
+                return None
+
+            if msg.get_type() in types:
+                return msg
 
     # ------------------------------------------------------------
     # Mission Upload
     # ------------------------------------------------------------
     def upload(self, mission_items):
+        """
+        Lädt die Mission hoch. True, wenn PX4 sie akzeptiert hat.
+        """
+        self._clear_rx()
+
         print(f"[MS] Sende MISSION_COUNT = {len(mission_items)}")
         self.master.mav.mission_count_send(
             self.target_system,
@@ -39,10 +103,12 @@ class MissionMicroService:
 
         while True:
             print("[MS] Warte auf PX4 MISSION_REQUEST / MISSION_ACK…")
-            msg = self.master.recv_match(
-                type=["MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"],
-                blocking=True
-            )
+            msg = self._wait_for({"MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"})
+
+            if msg is None:
+                print("[MS] Timeout: Keine MISSION_REQUEST / MISSION_ACK Antwort von PX4.")
+                return False
+
             print(f"[MS] Empfangen: {msg}")
 
             mtype = msg.get_type()
@@ -51,6 +117,10 @@ class MissionMicroService:
             if mtype in ["MISSION_REQUEST", "MISSION_REQUEST_INT"]:
                 seq = msg.seq
                 print(f"[MS] PX4 fordert Item {seq} an")
+
+                if not 0 <= seq < len(mission_items):
+                    print(f"[MS] Ungültige Item-Anforderung seq={seq}")
+                    return False
 
                 item = mission_items[seq]
                 print(f"[MS] → Sende MISSION_ITEM_INT seq={item.seq}")
@@ -76,7 +146,7 @@ class MissionMicroService:
             elif mtype == "MISSION_ACK":
                 print(f"[MS] PX4 Mission ACK: {msg.type}")
                 print("[MS] Mission Upload COMPLETE")
-                return
+                return msg.type == mavutil.mavlink.MAV_MISSION_ACCEPTED
 
     # ------------------------------------------------------------
     # Mission Download (für StartupHFSM)
@@ -84,12 +154,14 @@ class MissionMicroService:
     def download(self):
         print("[MS] Starte Mission Download…")
 
+        self._clear_rx()
+
         self.master.mav.mission_request_list_send(
             self.target_system,
             self.target_component
         )
 
-        msg = self.master.recv_match(type="MISSION_COUNT", blocking=True, timeout=3)
+        msg = self._wait_for({"MISSION_COUNT"})
         if msg is None:
             print("[MS] Timeout: Keine MISSION_COUNT Antwort von PX4.")
             return []
@@ -107,13 +179,21 @@ class MissionMicroService:
                 seq
             )
 
-            msg = self.master.recv_match(type="MISSION_ITEM_INT", blocking=True, timeout=3)
+            msg = self._wait_for_item(seq)
             if msg is None:
                 print(f"[MS] Timeout: Kein MISSION_ITEM_INT für seq={seq}")
                 break
 
             print(f"[MS] Empfangen: {msg}")
             mission.append(msg)
+
+        # Download gegenüber PX4 abschließen (wie QGC)
+        if count > 0 and len(mission) == count:
+            self.master.mav.mission_ack_send(
+                self.target_system,
+                self.target_component,
+                mavutil.mavlink.MAV_MISSION_ACCEPTED
+            )
 
         print("[MS] Mission Download COMPLETE")
 
@@ -127,3 +207,16 @@ class MissionMicroService:
                 pass
 
         return mission
+
+    def _wait_for_item(self, seq):
+        """MISSION_ITEM_INT mit passender seq; Duplikate/alte Items überspringen."""
+        deadline = time.monotonic() + self.timeout
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+
+            msg = self._wait_for({"MISSION_ITEM_INT"}, timeout=remaining)
+            if msg is None or msg.seq == seq:
+                return msg
