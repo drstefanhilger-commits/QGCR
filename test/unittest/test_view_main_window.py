@@ -1,18 +1,16 @@
-# === PFAD-B FULL FILE: QGCR/test/unittest/test_integration_tab_router_mainwindow.py ===
+# === PFAD-B FULL FILE: QGCR/test/unittest/test_view_main_window.py ===
 
 import unittest
 import tkinter as tk
 from unittest.mock import MagicMock
 
 from QGCR.view.main_window import MainWindow
-from QGCR.view.tab_router import TabRouter
 
 
-class TestIntegrationTabRouterMainWindow(unittest.TestCase):
+class TestViewMainWindow(unittest.TestCase):
     """
     MainWindow baut Home/Mission/Log + StatusBar und meldet Tab-Wechsel an den Controller
     (on_tab_changed → model.active_tab).
-    Der TabRouter löst nichts aus.
     """
 
     def setUp(self):
@@ -52,12 +50,6 @@ class TestIntegrationTabRouterMainWindow(unittest.TestCase):
 
     def test_status_bar_present(self):
         self.assertIs(self.gui.status_bar.controller, self.ctrl)
-
-    def test_tab_router_has_no_side_effects(self):
-        self.ctrl.reset_mock()
-        router = TabRouter(self.ctrl)
-        router.on_tab_changed("Mission")
-        self.assertEqual(self.ctrl.method_calls, [])
 
     def test_tab_change_notifies_controller(self):
         for tab in ("Mission", "Log", "Home"):

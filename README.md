@@ -227,9 +227,8 @@ STARTUP ──HB──► READY ◄──────────────┤
 
 ## Sub-FSMs
 
-Unter `states/<zustand>/subfsms/` mit `*_substate.py` und `*_state_map.py` existieren Sub-FSMs
-(z. B. `StartupHeartbeatFSM`, `ReadyIdleFSM`, `ReadyTakeoffFSM`). Sie sind getestet, werden von den
-HFSMs aber **derzeit nicht verwendet** – die HFSMs arbeiten ohne Substates.
+Die HFSMs arbeiten ohne Sub-FSMs (`hfsm_sub` ist nur eine Anzeige wie `IDLE`, `LAND`, `UPLOAD`).
+Die früheren Sub-FSMs samt `*_substate.py` / `*_state_map.py` liegen unter `Obsolete/states/`.
 
 ---
 
@@ -251,7 +250,6 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
   verworfen (direkt aus dem Model gelesen)
 - Tab-Wechsel (`<<NotebookTabChanged>>`) → `GUIController.on_tab_changed()` → `model.active_tab`.
   READY / MISSION werten `active_tab` zustandsbasiert aus (kein Event, das verloren gehen kann).
-  `TabRouter` ist ohne Wirkung
 - MissionTab: Upload öffnet einen Datei-Dialog (QGC `.plan`, `model/mission_parser.py`) →
   `model.mission_upload_items` → `MISSION_UPLOAD`; Download → `MISSION_DOWNLOAD`; Stop → `MISSION_STOP`.
   `gui_tick` aktiviert Upload/Download nur in MISSION/IDLE, Stop nur während eines Transfers, und zeigt
@@ -276,18 +274,19 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
 
 ---
 
-# 📁 Nicht verwendete Module (Altbestand)
+# 📁 Altbestand (`Obsolete/`)
 
-Von `main.py` aus nicht erreichbar:
+Module, die von `main.py` aus nicht erreichbar waren, liegen mit unveränderter Ordnerstruktur unter
+`Obsolete/` (z. B. `Obsolete/states/ready/subfsms/`). Sie werden nicht importiert und nicht getestet;
+ihre Imports zeigen noch auf die alten Pfade. Zurückholen: `git mv Obsolete/<pfad> <pfad>`.
 
-- `states/*/subfsms/`, `states/*/*_state_map.py`, `states/*/*_substate.py` (siehe Sub-FSMs)
-- `states/base_state*.py`, `states/*state_machine*.py`, `states/queue_enabled_*.py`, `states/state_machine_controller.py`
-- `core/states/`, `sim/startup.py`
-- `communication/heartbeat_monitor.py`, `communication/qgc_*.py`, alle `communication/microservices/*`
-  außer `mission_microservice.py`
-- `model/mission_parser.py`, `model/qgc_model_router.py`
-- `view/gis/` (tkintermapview), `view/gui_event_loop.py`, `view/gui_interface.py`, `view/button_policy.py`,
-  `view/telemetry_view.py`, `view/tab_router.py`
+- `Obsolete/states/`: Sub-FSMs, Substates, State-Maps, alte State-Machine-Basisklassen
+- `Obsolete/communication/`: `heartbeat_monitor.py`, `qgc_*.py`, alte `microservices/*`
+- `Obsolete/core/states/`, `Obsolete/sim/startup.py`, `Obsolete/model/qgc_model_router.py`
+- `Obsolete/view/`: `gis/` (tkintermapview), `gui_event_loop.py`, `gui_interface.py`, `button_policy.py`,
+  `telemetry_view.py`, `tab_router.py`
+
+Zugehörige Tests und Harness-Skripte liegen in `test/Obsolete/`.
 
 ---
 
