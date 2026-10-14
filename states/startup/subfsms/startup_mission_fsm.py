@@ -58,7 +58,7 @@ class StartupMissionFSM(BaseFSM):
 
         # Ins Model schreiben
         for m in msgs:
-            self.model.add_mission_item(m.seq, m.command, m.x, m.y, m.z)
+            self.model.add_mission_item(m.seq, m.command, m.x / 1e7, m.y / 1e7, m.z)
 
         # Flag setzen
         if len(msgs) > 0:

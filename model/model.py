@@ -119,6 +119,11 @@ class Model:
         self.mission_running = False
         self.mission_loaded = False
 
+        # Mission-Upload/-Download (MISSION-HFSM)
+        self.mission_upload_items = None   # MAVLink-Items aus .plan (GUIController)
+        self.mission_upload_file = None
+        self.mission_status = "-"
+
         # HFSM
         self.active_tab = "home"
         self.hfsm_main = "-"

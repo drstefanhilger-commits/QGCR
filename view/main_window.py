@@ -61,11 +61,3 @@ class MainWindow(ttk.Frame):
 
         tab_name = self.notebook.tab(self.notebook.select(), "text")
         self.controller.on_tab_changed(tab_name)
-
-        match tab_name:
-            case "Mission":
-                self.controller.on_tab_mission()
-            case "Home":
-                self.controller.on_tab_home()
-            case _:
-                pass

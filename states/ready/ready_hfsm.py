@@ -45,15 +45,16 @@ class ReadyHFSM(BaseHFSM):
                     self._next_state = MainState.RESET
                     return
 
-                case "EV_GOTO_MISSION":
-                    self._next_state = MainState.MISSION
-                    return
-
                 case "ARM":
                     self._send_arm_disarm(arm=True)
 
                 case "DISARM":
                     self._send_arm_disarm(arm=False)
+
+        # Mission-Tab aktiv → MISSION (zustandsbasiert, kein Event geht verloren)
+        if self.model.active_tab == "Mission":
+            self._next_state = MainState.MISSION
+            return
 
         # Grace-Phase nach Startup/Reset
         if time.time() - self._enter_time < 5.0:

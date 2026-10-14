@@ -41,11 +41,22 @@ class TestReadyHFSM(unittest.TestCase):
 
         self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
 
-    def test_goto_mission_event_goes_mission(self):
+    def test_mission_tab_goes_mission(self):
         self.fsm.on_update()
-        self.model.hfsm_events.append("EV_GOTO_MISSION")
+        self.model.active_tab = "Mission"
 
         self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
+    def test_mission_tab_selected_during_enter_is_not_lost(self):
+        """Tab-Klick vor dem ersten Tick (Enter leert hfsm_events) geht nicht verloren."""
+        self.model.active_tab = "Mission"
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
+    def test_log_tab_stays_ready(self):
+        self.fsm.on_update()
+        self.model.active_tab = "Log"
+
+        self.assertEqual(self.fsm.on_update(), MainState.READY)
 
     def test_reset_event_goes_reset(self):
         self.fsm.on_update()

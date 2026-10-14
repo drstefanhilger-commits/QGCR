@@ -47,6 +47,9 @@ class MissionMicroService:
 
         self._rx = queue.Queue()
 
+        # Fehler des letzten upload()/download() (None = OK)
+        self.last_error = None
+
     # ------------------------------------------------------------
     # Dispatcher Hook (läuft im RX-Thread der Connection)
     # ------------------------------------------------------------
@@ -93,6 +96,7 @@ class MissionMicroService:
         Lädt die Mission hoch. True, wenn PX4 sie akzeptiert hat.
         """
         self._clear_rx()
+        self.last_error = None
 
         print(f"[MS] Sende MISSION_COUNT = {len(mission_items)}")
         self.master.mav.mission_count_send(
@@ -107,6 +111,7 @@ class MissionMicroService:
 
             if msg is None:
                 print("[MS] Timeout: Keine MISSION_REQUEST / MISSION_ACK Antwort von PX4.")
+                self.last_error = "Timeout (MISSION_REQUEST / MISSION_ACK)"
                 return False
 
             print(f"[MS] Empfangen: {msg}")
@@ -120,6 +125,7 @@ class MissionMicroService:
 
                 if not 0 <= seq < len(mission_items):
                     print(f"[MS] Ungültige Item-Anforderung seq={seq}")
+                    self.last_error = f"Ungültige Item-Anforderung seq={seq}"
                     return False
 
                 item = mission_items[seq]
@@ -146,7 +152,10 @@ class MissionMicroService:
             elif mtype == "MISSION_ACK":
                 print(f"[MS] PX4 Mission ACK: {msg.type}")
                 print("[MS] Mission Upload COMPLETE")
-                return msg.type == mavutil.mavlink.MAV_MISSION_ACCEPTED
+                if msg.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                    self.last_error = f"PX4 lehnt Mission ab (MAV_MISSION_RESULT {msg.type})"
+                    return False
+                return True
 
     # ------------------------------------------------------------
     # Mission Download (für StartupHFSM)
@@ -155,6 +164,7 @@ class MissionMicroService:
         print("[MS] Starte Mission Download…")
 
         self._clear_rx()
+        self.last_error = None
 
         self.master.mav.mission_request_list_send(
             self.target_system,
@@ -164,6 +174,7 @@ class MissionMicroService:
         msg = self._wait_for({"MISSION_COUNT"})
         if msg is None:
             print("[MS] Timeout: Keine MISSION_COUNT Antwort von PX4.")
+            self.last_error = "Timeout (MISSION_COUNT)"
             return []
 
         count = msg.count
@@ -182,6 +193,7 @@ class MissionMicroService:
             msg = self._wait_for_item(seq)
             if msg is None:
                 print(f"[MS] Timeout: Kein MISSION_ITEM_INT für seq={seq}")
+                self.last_error = f"Timeout (MISSION_ITEM_INT seq={seq})"
                 break
 
             print(f"[MS] Empfangen: {msg}")

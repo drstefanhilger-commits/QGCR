@@ -10,7 +10,8 @@ from QGCR.view.tab_router import TabRouter
 
 class TestIntegrationTabRouterMainWindow(unittest.TestCase):
     """
-    MainWindow baut Home/Mission/Log + StatusBar und meldet Tab-Wechsel an den Controller.
+    MainWindow baut Home/Mission/Log + StatusBar und meldet Tab-Wechsel an den Controller
+    (on_tab_changed → model.active_tab).
     Der TabRouter löst nichts aus.
     """
 
@@ -58,31 +59,12 @@ class TestIntegrationTabRouterMainWindow(unittest.TestCase):
         router.on_tab_changed("Mission")
         self.assertEqual(self.ctrl.method_calls, [])
 
-    def test_mission_tab_notifies_controller(self):
-        self.ctrl.reset_mock()
-        self.select_tab("Mission")
-
-        self.ctrl.on_tab_changed.assert_called_once_with("Mission")
-        self.ctrl.on_tab_mission.assert_called_once()
-        self.ctrl.on_tab_home.assert_not_called()
-
-    def test_home_tab_notifies_controller(self):
-        self.select_tab("Mission")
-        self.ctrl.reset_mock()
-        self.select_tab("Home")
-
-        self.ctrl.on_tab_changed.assert_called_once_with("Home")
-        self.ctrl.on_tab_home.assert_called_once()
-        self.ctrl.on_tab_mission.assert_not_called()
-
-    def test_log_tab_only_sets_active_tab(self):
-        self.ctrl.reset_mock()
-        self.select_tab("Log")
-
-        self.ctrl.on_tab_changed.assert_called_once_with("Log")
-        self.ctrl.on_tab_home.assert_not_called()
-        self.ctrl.on_tab_mission.assert_not_called()
-
+    def test_tab_change_notifies_controller(self):
+        for tab in ("Mission", "Log", "Home"):
+            with self.subTest(tab=tab):
+                self.ctrl.reset_mock()
+                self.select_tab(tab)
+                self.ctrl.on_tab_changed.assert_called_once_with(tab)
 
 if __name__ == "__main__":
     unittest.main()

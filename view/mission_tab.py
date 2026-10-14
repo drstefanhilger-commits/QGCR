@@ -26,7 +26,7 @@ class MissionTab(ttk.Frame):
         self.btn_upload = ttk.Button(
             button_frame,
             text="Upload",
-            command=lambda: self.controller.handle_button_event("MISSION_UPLOAD"),
+            command=lambda: self.controller.request_mission_upload(),
             state="disabled"
         )
         self.btn_upload.pack(side=tk.LEFT, padx=4)
@@ -63,6 +63,12 @@ class MissionTab(ttk.Frame):
         self.lbl_mission.pack(anchor="w", padx=5, pady=2)
 
         # ------------------------------------------------------------
+        # Upload-/Download-Status
+        # ------------------------------------------------------------
+        self.lbl_status = ttk.Label(self, text="Status: -")
+        self.lbl_status.pack(anchor="w", padx=5, pady=2)
+
+        # ------------------------------------------------------------
         # Missionsliste
         # ------------------------------------------------------------
         self.listbox = tk.Listbox(self, height=20)
@@ -76,3 +82,18 @@ class MissionTab(ttk.Frame):
         self.btn_upload["state"] = "normal" if upload else "disabled"
         self.btn_download["state"] = "normal" if download else "disabled"
         self.btn_stop["state"] = "normal" if stop else "disabled"
+
+    def show_mission(self, data):
+        """
+        Zeigt Home, Mission, Status und Wegpunkte an.
+        data = GUIController.get_mission_view_data()
+        """
+        self.lbl_home["text"] = data["home_text"]
+        self.lbl_mission["text"] = data["mission_text"]
+        self.lbl_status["text"] = data["status_text"]
+
+        # Liste nur bei Änderung neu aufbauen (kein Flackern / Scroll-Reset)
+        if list(self.listbox.get(0, "end")) != data["waypoints"]:
+            self.listbox.delete(0, "end")
+            for line in data["waypoints"]:
+                self.listbox.insert("end", line)

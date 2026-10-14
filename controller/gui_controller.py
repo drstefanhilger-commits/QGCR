@@ -1,5 +1,10 @@
 # === PFAD-B FULL FILE: QGCR/controller/gui_controller.py ===
 
+import os
+
+from QGCR.model.mission_parser import load_qgc_plan
+
+
 class GUIController:
     """
     Vermittelt zwischen GUI, Model und MainWindow.
@@ -40,26 +45,9 @@ class GUIController:
         self.root = None
 
     # ------------------------------------------------------------
-    # GUI → HFSM Events (Tab-Wechsel)
+    # GUI → Model (Tab-Wechsel)
+    # READY/MISSION werten model.active_tab zustandsbasiert aus.
     # ------------------------------------------------------------
-    def on_tab_home(self):
-        # Nur aus MISSION zurück – sonst bliebe das Event in hfsm_events liegen
-        if self.model.hfsm_main != "MISSION":
-            return
-        try:
-            self.model.hfsm_events.append("EV_GOTO_READY")
-        except Exception as e:
-            print("HFSM event error (HOME_TAB):", e)
-
-    def on_tab_mission(self):
-        # MISSION nur aus READY (nicht im Flug)
-        if self.model.hfsm_main != "READY":
-            return
-        try:
-            self.model.hfsm_events.append("EV_GOTO_MISSION")
-        except Exception as e:
-            print("HFSM event error (MISSION_TAB):", e)
-
     def on_tab_changed(self, tab_name: str):
         self.model.active_tab = tab_name
 
@@ -150,6 +138,50 @@ class GUIController:
         self.model.log.qgcr(text)
 
     # ------------------------------------------------------------
+    # Mission-Upload: .plan wählen → laden → Event an MissionHFSM
+    # ------------------------------------------------------------
+    def request_mission_upload(self, path=None):
+        if self.model.hfsm_main != "MISSION":
+            return
+
+        if path is None:
+            from tkinter import filedialog
+            path = filedialog.askopenfilename(
+                title="QGC-Mission laden",
+                initialdir=os.path.expanduser("~"),
+                filetypes=[("QGC Plan", "*.plan"), ("Alle Dateien", "*")],
+            )
+            if not path:
+                return
+
+        try:
+            items = load_qgc_plan(path)
+        except Exception as e:
+            self.model.mission_status = f"Plan-Datei fehlerhaft: {e}"
+            self.model.log.qgcr(f"[GUIController] Plan-Datei fehlerhaft ({path}): {e}")
+            return
+
+        self.model.mission_upload_items = items
+        self.model.mission_upload_file = path
+        self.model.log.qgcr(f"[GUIController] Plan geladen: {path} ({len(items)} Items)")
+        self.handle_button_event("MISSION_UPLOAD")
+
+    def update_mission_tab(self):
+        """MissionTab aktualisieren (aus gui_tick)."""
+        if not (self.main_window and getattr(self.main_window, "mission_tab", None)):
+            return
+
+        idle = (
+            self.model.hfsm_main == "MISSION"
+            and self.model.hfsm_sub == "IDLE"
+            and getattr(self.model, "mission_ms", None) is not None
+        )
+
+        tab = self.main_window.mission_tab
+        tab.set_enabled(upload=idle, download=idle, stop=False)
+        tab.show_mission(self.get_mission_view_data())
+
+    # ------------------------------------------------------------
     # VIEW → CONTROLLER → MODEL (MissionTab)
     # ------------------------------------------------------------
     def get_mission_view_data(self):
@@ -185,6 +217,7 @@ class GUIController:
             "home_text": home_text,
             "mission_text": mission_text,
             "waypoints": waypoints,
+            "status_text": f"Status: {getattr(self.model, 'mission_status', '-')}",
         }
 
     # ------------------------------------------------------------
@@ -231,6 +264,9 @@ class GUIController:
             self.main_window.status_bar.set_armed(self.model.px4_armed)
             self.main_window.status_bar.set_hb(self.model.px4_heartbeat_count)
             self.main_window.status_bar.spin()
+
+        # MissionTab (Buttons, Mission, Status)
+        self.update_mission_tab()
 
         if self.root:
             self.root.after(500, self.gui_tick)
