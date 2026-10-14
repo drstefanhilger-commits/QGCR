@@ -6,6 +6,7 @@ import subprocess
 import socket
 import time
 import glob
+import re
 
 
 class StartupCleanup:
@@ -14,31 +15,33 @@ class StartupCleanup:
     bevor PX4 und Gazebo gestartet werden.
     """
 
+    # Programmnamen (argv[0], mit oder ohne Pfad) – exakter Vergleich
     PX4_PROCESSES = [
         "px4",
-        "px4_sitl",
-        "px4_sitl_default",
-        "PX4_SIM_MODEL",
     ]
 
     SIM_PROCESSES = [
-        "gz",
+        "gz",           # Gazebo Harmonic: "gz sim ..."
         "gzserver",
         "gzclient",
-        "gz-sim",
         "ign",
     ]
 
     MAV_PROCESSES = [
         "micrortps_agent",
         "micrortps_client",
-        "mavsdk",
         "mavsdk_server",
     ]
 
+    # Python-Skripte (python3 <pfad/>skript.py ...)
     PYTHON_PROCESSES = [
         "px4_service.py",
         "px4_swarm_starter.py",
+    ]
+
+    # Zusätzliche, am Zeilenanfang verankerte Kommandozeilen (POSIX-ERE für pkill -f)
+    CMDLINE_PATTERNS = [
+        r"^make px4_sitl( |$)",
     ]
 
     PORTS_TO_CLEAR = [
@@ -47,10 +50,37 @@ class StartupCleanup:
     ]
 
     @staticmethod
-    def _kill_processes_by_name(names):
-        for name in names:
+    def _program_pattern(name):
+        """
+        Trifft nur Prozesse, deren argv[0] exakt name ist (optional mit Pfad),
+        z.B. "px4" oder "/home/.../bin/px4" – aber NICHT "python3 test_px4_x.py".
+        """
+        return rf"^([^ ]*/)?{re.escape(name)}( |$)"
+
+    @staticmethod
+    def _python_script_pattern(script):
+        return rf"^([^ ]*/)?python3?(\.[0-9]+)? ([^ ]*/)?{re.escape(script)}( |$)"
+
+    @staticmethod
+    def kill_patterns():
+        """
+        Alle pkill -f Muster der Bereinigung.
+        """
+        names = (
+            StartupCleanup.PX4_PROCESSES
+            + StartupCleanup.SIM_PROCESSES
+            + StartupCleanup.MAV_PROCESSES
+        )
+        patterns = [StartupCleanup._program_pattern(n) for n in names]
+        patterns += [StartupCleanup._python_script_pattern(s) for s in StartupCleanup.PYTHON_PROCESSES]
+        patterns += StartupCleanup.CMDLINE_PATTERNS
+        return patterns
+
+    @staticmethod
+    def _kill_processes_by_pattern(patterns):
+        for pattern in patterns:
             try:
-                subprocess.run(["pkill", "-9", "-f", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["pkill", "-9", "-f", pattern], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 
@@ -89,17 +119,8 @@ class StartupCleanup:
         Führt die komplette Bereinigung durch.
         """
 
-        # PX4
-        StartupCleanup._kill_processes_by_name(StartupCleanup.PX4_PROCESSES)
-
-        # Simulatoren
-        StartupCleanup._kill_processes_by_name(StartupCleanup.SIM_PROCESSES)
-
-        # MAVLink / RTPS
-        StartupCleanup._kill_processes_by_name(StartupCleanup.MAV_PROCESSES)
-
-        # Python-Reste
-        StartupCleanup._kill_processes_by_name(StartupCleanup.PYTHON_PROCESSES)
+        # PX4, Simulatoren, MAVLink/RTPS, Python-Reste
+        StartupCleanup._kill_processes_by_pattern(StartupCleanup.kill_patterns())
 
         # Ports freigeben
         for port in StartupCleanup.PORTS_TO_CLEAR:
