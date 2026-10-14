@@ -160,11 +160,13 @@ class Application:
         ):
             time.sleep(0.05)
 
-        self.model.mission = MissionMicroService(
+        # model.mission bleibt MissionData – der Service kommt nach model.mission_ms
+        self.model.mission_ms = MissionMicroService(
             self.connection.master,
             self.connection.master.target_system,
             self.connection.master.target_component
         )
+        self.model.services.mission = self.model.mission_ms
 
         print(
             f"MissionMicroService initialisiert (sysid={self.connection.master.target_system}, "

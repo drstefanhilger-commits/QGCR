@@ -155,7 +155,8 @@ Nicht-blockierend mit `start()` / `tick()` / `on_message()` und den Flags `done`
 | `model.reset` | `ResetMicroService` | `microservices/reset_microservice.py` |
 
 Zusätzlich erzeugt der Connect-Thread nach dem ersten PX4-Heartbeat einen synchronen
-`MissionMicroService` (`communication/microservices/mission_microservice.py`, `upload()` / `download()`).
+`MissionMicroService` (`communication/microservices/mission_microservice.py`, `upload()` / `download()`)
+als `model.mission_ms` (= `model.services.mission`). `model.mission` bleibt immer die `MissionData`.
 
 ---
 
@@ -238,7 +239,7 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
 8. `main_controller = MainController(model, MAIN_STATE_MAP)`
 9. `gui_controller = GUIController(...)`, `window = MainWindow(...)`, GUI-Tick starten
 10. Threads: Update-Loop (20 Hz) und Connect-Loop (`connection.connect()`, auf Heartbeat warten,
-    `MissionMicroService` anlegen)
+    `model.mission_ms = MissionMicroService(...)`)
 11. `root.mainloop()`
 
 ---

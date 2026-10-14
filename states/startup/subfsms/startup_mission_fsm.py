@@ -34,7 +34,7 @@ class StartupMissionFSM(BaseFSM):
         msgs = []
         try:
             # SYNCHRONER Download (Harness-kompatibel)
-            msgs = self.model.mission.download()
+            msgs = self.model.mission_ms.download()
         except Exception as e:
             try:
                 self.model.queue_registry.require("gui").push(
