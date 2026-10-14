@@ -58,5 +58,51 @@ class TestMainConnectLoop(unittest.TestCase):
         self.assertEqual(gui.get_mission_view_data()["mission_text"], "Mission: -")
 
 
+class TestMainApplicationInit(unittest.TestCase):
+    """
+    Application() ohne Cleanup und ohne Threads aufbauen.
+    """
+
+    @patch("builtins.print")
+    @patch("QGCR.main.threading.Thread")
+    @patch("QGCR.main.StartupCleanup")
+    def setUp(self, cleanup, thread, _print):
+        self.app = Application()
+        self.app.root.withdraw()
+        self.cleanup = cleanup
+
+    def tearDown(self):
+        self.app.root.destroy()
+
+    def test_cleanup_runs_first(self):
+        self.cleanup.run_full_cleanup.assert_called_once()
+
+    def test_microservices_exist_once(self):
+        m = self.app.model
+
+        self.assertFalse(hasattr(m, "upload"))
+        self.assertFalse(hasattr(m, "home"))
+        self.assertIs(m.services.takeoff, m.takeoff)
+        self.assertIs(m.services.upload, m.upload_ms)
+        self.assertIs(m.services.home, m.home_ms)
+        self.assertIs(m.services.reset, m.reset)
+
+    def test_microservices_use_application_connection(self):
+        m = self.app.model
+        for svc in (m.takeoff, m.upload_ms, m.home_ms):
+            self.assertIs(svc.connection, self.app.connection)
+
+    @patch("builtins.print")
+    def test_dispatcher_reaches_ticked_takeoff_service(self, _print):
+        takeoff = self.app.model.takeoff
+        takeoff.on_message = MagicMock()
+
+        msg = MagicMock()
+        msg.get_type.return_value = "COMMAND_ACK"
+        self.app.dispatcher.dispatch(msg)
+
+        takeoff.on_message.assert_called_once_with("COMMAND_ACK", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

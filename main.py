@@ -19,10 +19,6 @@ from QGCR.core.queue_registry import QueueRegistry
 from QGCR.states.main_state_map import MAIN_STATE_MAP
 
 from QGCR.communication.microservices.mission_microservice import MissionMicroService
-from QGCR.microservices.upload_ms import UploadMicroService
-from QGCR.microservices.home_ms import HomeMicroService
-from QGCR.microservices.takeoff_ms import TakeoffMicroService
-from QGCR.microservices.reset_microservice import ResetMicroService
 
 from QGCR.logging.log_router import LogRouter
 from QGCR.core.startup_cleanup import StartupCleanup
@@ -81,16 +77,9 @@ class Application:
         self.model.connection = self.connection
 
         # ------------------------------------------------------------
-        # MicroServices
-        # ------------------------------------------------------------
-        self.model.upload = UploadMicroService(self.model, self.connection)
-        self.model.home = HomeMicroService(self.model, self.connection)
-        self.model.takeoff = TakeoffMicroService(self.model, self.connection)
-        self.model.reset = ResetMicroService(self.model)
-
-        # ------------------------------------------------------------
         # Controller
         # ------------------------------------------------------------
+        # MicroServiceController erzeugt takeoff, upload_ms, home_ms, reset
         self.ms_controller = MicroServiceController(self.model)
         self.main_controller = MainController(self.model, MAIN_STATE_MAP)
         self.gui_controller = GUIController(
