@@ -48,6 +48,11 @@ class TestViewMissionTab(unittest.TestCase):
         self.tab.btn_download.invoke()
         self.ctrl.handle_button_event.assert_called_once_with("MISSION_DOWNLOAD")
 
+    def test_stop_button_sends_event(self):
+        self.tab.set_enabled(upload=False, download=False, stop=True)
+        self.tab.btn_stop.invoke()
+        self.ctrl.handle_button_event.assert_called_once_with("MISSION_STOP")
+
     def test_show_mission(self):
         self.tab.show_mission(self.data(["00: A", "01: B"]))
 

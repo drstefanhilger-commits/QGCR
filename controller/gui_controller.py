@@ -202,14 +202,16 @@ class GUIController:
         if not (self.main_window and getattr(self.main_window, "mission_tab", None)):
             return
 
+        in_mission = self.model.hfsm_main == "MISSION"
         idle = (
-            self.model.hfsm_main == "MISSION"
+            in_mission
             and self.model.hfsm_sub == "IDLE"
             and getattr(self.model, "mission_ms", None) is not None
         )
+        transfer = in_mission and self.model.hfsm_sub in ("UPLOAD", "DOWNLOAD")
 
         tab = self.main_window.mission_tab
-        tab.set_enabled(upload=idle, download=idle, stop=False)
+        tab.set_enabled(upload=idle, download=idle, stop=transfer)
         tab.show_mission(self.get_mission_view_data())
 
     # ------------------------------------------------------------

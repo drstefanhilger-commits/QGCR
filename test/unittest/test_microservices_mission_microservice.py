@@ -3,6 +3,7 @@
 
 import queue
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -162,6 +163,59 @@ class TestMissionMicroServiceUnit(unittest.TestCase):
         self.feed("MISSION_ACK", type=ACCEPTED)        # Rest eines alten Transfers
         self.assertFalse(self.ms.upload(waypoints(1)))  # → Timeout statt falschem ACK
 
+    # --------------------------------------------------------
+    # Abbruch
+    # --------------------------------------------------------
+    def cancel_after(self, delay):
+        cancel = threading.Event()
+        threading.Timer(delay, cancel.set).start()
+        return cancel
+
+    def assert_cancel_ack(self):
+        self.master.mav.mission_ack_send.assert_called_with(
+            1, 1, mavutil.mavlink.MAV_MISSION_OPERATION_CANCELLED)
+        self.assertEqual(self.ms.last_error, MissionMicroService.CANCELLED)
+
+    @patch("builtins.print")
+    def test_upload_cancel(self, _print):
+        self.ms.timeout = 5.0
+        start = time.monotonic()
+
+        self.assertFalse(self.ms.upload(waypoints(2), cancel=self.cancel_after(0.2)))
+
+        self.assertLess(time.monotonic() - start, 1.0)     # nicht erst nach Timeout
+        self.assert_cancel_ack()
+
+    @patch("builtins.print")
+    def test_download_cancel_during_items(self, _print):
+        self.ms.timeout = 5.0
+        self.master.mav.mission_request_list_send.side_effect = \
+            lambda *a: self.feed("MISSION_COUNT", count=3)
+        self.master.mav.mission_request_int_send.side_effect = \
+            lambda t, c, seq: self.feed("MISSION_ITEM_INT", seq=seq) if seq == 0 else None
+
+        mission = self.ms.download(cancel=self.cancel_after(0.2))
+
+        self.assertEqual([m.seq for m in mission], [0])
+        self.assert_cancel_ack()
+        self.assertEqual(self.master.mav.mission_ack_send.call_count, 1)  # kein ACCEPTED
+
+    @patch("builtins.print")
+    def test_cancel_before_start(self, _print):
+        cancel = threading.Event()
+        cancel.set()
+
+        self.assertEqual(self.ms.download(cancel=cancel), [])
+        self.assert_cancel_ack()
+
+    @patch("builtins.print")
+    def test_unset_cancel_does_not_interfere(self, _print):
+        self.master.mav.mission_request_list_send.side_effect = \
+            lambda *a: self.feed("MISSION_COUNT", count=0)
+
+        self.assertEqual(self.ms.download(cancel=threading.Event()), [])
+        self.assertIsNone(self.ms.last_error)
+
     def test_non_mission_messages_are_ignored(self):
         self.ms.on_message("HEARTBEAT", make_msg("HEARTBEAT"))
         self.assertTrue(self.ms._rx.empty())
@@ -203,6 +257,19 @@ class TestMissionMicroServiceWithConnection(unittest.TestCase):
         self.model.mission_ms.download()
 
         self.assertEqual(self.px4.recv_threads, {self.conn._rx_thread.name})
+
+    @patch("builtins.print")
+    def test_cancel_via_rx_thread(self, _print):
+        """PX4 antwortet nicht auf Item-Anforderungen → Stop bricht ab, PX4 bekommt CANCELLED."""
+        self.px4.mav.mission_request_int_send.side_effect = None
+        cancel = threading.Event()
+        threading.Timer(0.3, cancel.set).start()
+
+        mission = self.model.mission_ms.download(cancel=cancel)
+
+        self.assertEqual(mission, [])
+        self.px4.mav.mission_ack_send.assert_called_with(
+            1, 1, mavutil.mavlink.MAV_MISSION_OPERATION_CANCELLED)
 
 
 if __name__ == "__main__":

@@ -159,7 +159,8 @@ Zusätzlich erzeugt der Connect-Thread nach dem ersten PX4-Heartbeat einen synch
 als `model.mission_ms` (= `model.services.mission`). `model.mission` bleibt immer die `MissionData`.
 Der Service liest **nicht** selbst von der Verbindung: Mission-Nachrichten kommen über den Dispatcher
 (`on_message`) in eine Queue, `upload()` / `download()` warten darauf (Timeout je Nachricht).
-Beide blockieren und dürfen nicht aus dem RX-Thread aufgerufen werden.
+Beide blockieren und dürfen nicht aus dem RX-Thread aufgerufen werden. Abbruch über ein `threading.Event`
+(`cancel=`) je Transfer: PX4 erhält `MISSION_ACK` (`MAV_MISSION_OPERATION_CANCELLED`), `last_error` = `"Abgebrochen"`.
 Grundregel: Nur der RX-Thread der Connection ruft `recv_match()` auf.
 
 ---
@@ -195,7 +196,7 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 | `STARTUP` | `StartupHFSM` | Enter: `PX4SwarmStarter(model.vehicle_configs).start_all()` (oder vorhandenen `model.startup_controller` wiederverwenden). → `READY`, sobald `connection_ready()` und `heartbeat_ok()` |
 | `READY` | `ReadyHFSM` | Enter: `hfsm_events` leeren. Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, Mission-Tab aktiv (`model.active_tab`) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
 | `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `RESET` → RESET, Verbindung verloren → RESET |
-| `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE). Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
+| `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, `reset_done=True` → STARTUP |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
 
@@ -240,9 +241,9 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
   READY / MISSION werten `active_tab` zustandsbasiert aus (kein Event, das verloren gehen kann).
   `TabRouter` ist ohne Wirkung
 - MissionTab: Upload öffnet einen Datei-Dialog (QGC `.plan`, `model/mission_parser.py`) →
-  `model.mission_upload_items` → `MISSION_UPLOAD`; Download → `MISSION_DOWNLOAD`.
-  `gui_tick` aktiviert Upload/Download nur in MISSION/IDLE und zeigt Home, Wegpunkte und
-  `model.mission_status`
+  `model.mission_upload_items` → `MISSION_UPLOAD`; Download → `MISSION_DOWNLOAD`; Stop → `MISSION_STOP`.
+  `gui_tick` aktiviert Upload/Download nur in MISSION/IDLE, Stop nur während eines Transfers, und zeigt
+  Home, Wegpunkte und `model.mission_status`
 
 ---
 

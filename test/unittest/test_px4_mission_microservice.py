@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_px4_mission_microservice.py ===
 
+import threading
 import time
 import unittest
 from unittest.mock import patch
@@ -31,8 +32,7 @@ class TestPX4MissionMicroService(unittest.TestCase):
         self.conn.close()
         self.sitl.stop()
 
-    @patch("builtins.print")
-    def test_upload_and_download(self, _print):
+    def wait_for_px4(self):
         deadline = time.time() + 90
         while time.time() < deadline and not (
             self.model.px4_heartbeat_count > 0 and self.conn.master.target_system
@@ -44,6 +44,30 @@ class TestPX4MissionMicroService(unittest.TestCase):
         self.model.mission_ms = MissionMicroService(
             master, master.target_system, master.target_component, timeout=5.0
         )
+
+    MISSION = [
+        make_waypoint(0, 47.397742, 8.545594, 30),
+        make_waypoint(1, 47.398500, 8.546500, 40),
+        make_waypoint(2, 47.399000, 8.545000, 50),
+    ]
+
+    @patch("builtins.print")
+    def test_cancelled_upload_then_upload_ok(self, _print):
+        """Nach CANCELLED-ACK ist PX4 wieder bereit; nächster Upload wird akzeptiert."""
+        self.wait_for_px4()
+        ms = self.model.mission_ms
+
+        cancel = threading.Event()
+        cancel.set()
+        self.assertFalse(ms.upload(self.MISSION, cancel=cancel))
+        self.assertEqual(ms.last_error, MissionMicroService.CANCELLED)
+
+        self.assertTrue(ms.upload(self.MISSION), f"Upload nach Abbruch: {ms.last_error}")
+        self.assertEqual([m.seq for m in ms.download()], [0, 1, 2])
+
+    @patch("builtins.print")
+    def test_upload_and_download(self, _print):
+        self.wait_for_px4()
 
         mission = [
             make_waypoint(0, 47.397742, 8.545594, 30),

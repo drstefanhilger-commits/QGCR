@@ -130,12 +130,24 @@ class TestControllerGUIControllerMission(unittest.TestCase):
         window.mission_tab.set_enabled.assert_called_once_with(upload=True, download=True, stop=False)
         window.mission_tab.show_mission.assert_called_once()
 
+    def test_update_mission_tab_stop_only_during_transfer(self, _print):
+        window = MagicMock()
+        self.gui.main_window = window
+        self.model.mission_ms = MagicMock()
+
+        for sub in ("UPLOAD", "DOWNLOAD"):
+            with self.subTest(sub=sub):
+                window.reset_mock()
+                self.model.hfsm_sub = sub
+                self.gui.update_mission_tab()
+                window.mission_tab.set_enabled.assert_called_once_with(
+                    upload=False, download=False, stop=True)
+
     def test_update_mission_tab_disables_buttons(self, _print):
         window = MagicMock()
         self.gui.main_window = window
 
         for main, sub, ms in (("READY", "IDLE", MagicMock()),
-                              ("MISSION", "DOWNLOAD", MagicMock()),
                               ("MISSION", "IDLE", None)):
             with self.subTest(main=main, sub=sub, ms=ms):
                 window.reset_mock()

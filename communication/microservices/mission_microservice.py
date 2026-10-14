@@ -13,6 +13,9 @@ RX-Thread der Connection). Mission-Nachrichten kommen über den Dispatcher
 
 upload()/download() blockieren bis zum Ende bzw. Timeout und dürfen daher
 NICHT aus dem RX-Thread (Dispatcher-Callback) aufgerufen werden.
+Abbruch: optionales threading.Event `cancel` je Transfer – wird es gesetzt,
+endet der Transfer, PX4 erhält MISSION_ACK (OPERATION_CANCELLED) und
+last_error == MissionMicroService.CANCELLED.
 """
 
 import queue
@@ -22,6 +25,9 @@ from pymavlink import mavutil
 
 
 class MissionMicroService:
+
+    CANCELLED = "Abgebrochen"
+    POLL_INTERVAL = 0.1     # Abbruch-Prüfung beim Warten [s]
 
     MISSION_MSG_TYPES = {
         "MISSION_COUNT",
@@ -68,30 +74,47 @@ class MissionMicroService:
             except queue.Empty:
                 return
 
-    def _wait_for(self, types, timeout=None):
+    def _wait_for(self, types, timeout=None, cancel=None):
         """
         Wartet auf die nächste Nachricht eines der Typen.
-        Andere Mission-Nachrichten werden verworfen. None bei Timeout.
+        Andere Mission-Nachrichten werden verworfen. None bei Timeout oder Abbruch.
         """
         deadline = time.monotonic() + (self.timeout if timeout is None else timeout)
 
         while True:
+            if cancel is not None and cancel.is_set():
+                return None
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return None
 
             try:
-                msg = self._rx.get(timeout=remaining)
+                msg = self._rx.get(timeout=min(remaining, self.POLL_INTERVAL))
             except queue.Empty:
-                return None
+                continue
 
             if msg.get_type() in types:
                 return msg
 
+    def _cancelled(self, cancel):
+        """Abbruch gesetzt? Dann PX4 informieren und last_error setzen."""
+        if cancel is None or not cancel.is_set():
+            return False
+
+        print("[MS] Transfer abgebrochen → MISSION_ACK (OPERATION_CANCELLED)")
+        self.master.mav.mission_ack_send(
+            self.target_system,
+            self.target_component,
+            mavutil.mavlink.MAV_MISSION_OPERATION_CANCELLED
+        )
+        self.last_error = self.CANCELLED
+        return True
+
     # ------------------------------------------------------------
     # Mission Upload
     # ------------------------------------------------------------
-    def upload(self, mission_items):
+    def upload(self, mission_items, cancel=None):
         """
         Lädt die Mission hoch. True, wenn PX4 sie akzeptiert hat.
         """
@@ -107,7 +130,10 @@ class MissionMicroService:
 
         while True:
             print("[MS] Warte auf PX4 MISSION_REQUEST / MISSION_ACK…")
-            msg = self._wait_for({"MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"})
+            msg = self._wait_for({"MISSION_REQUEST", "MISSION_REQUEST_INT", "MISSION_ACK"}, cancel=cancel)
+
+            if self._cancelled(cancel):
+                return False
 
             if msg is None:
                 print("[MS] Timeout: Keine MISSION_REQUEST / MISSION_ACK Antwort von PX4.")
@@ -160,7 +186,7 @@ class MissionMicroService:
     # ------------------------------------------------------------
     # Mission Download (für StartupHFSM)
     # ------------------------------------------------------------
-    def download(self):
+    def download(self, cancel=None):
         print("[MS] Starte Mission Download…")
 
         self._clear_rx()
@@ -171,7 +197,9 @@ class MissionMicroService:
             self.target_component
         )
 
-        msg = self._wait_for({"MISSION_COUNT"})
+        msg = self._wait_for({"MISSION_COUNT"}, cancel=cancel)
+        if self._cancelled(cancel):
+            return []
         if msg is None:
             print("[MS] Timeout: Keine MISSION_COUNT Antwort von PX4.")
             self.last_error = "Timeout (MISSION_COUNT)"
@@ -190,7 +218,9 @@ class MissionMicroService:
                 seq
             )
 
-            msg = self._wait_for_item(seq)
+            msg = self._wait_for_item(seq, cancel)
+            if self._cancelled(cancel):
+                break
             if msg is None:
                 print(f"[MS] Timeout: Kein MISSION_ITEM_INT für seq={seq}")
                 self.last_error = f"Timeout (MISSION_ITEM_INT seq={seq})"
@@ -220,7 +250,7 @@ class MissionMicroService:
 
         return mission
 
-    def _wait_for_item(self, seq):
+    def _wait_for_item(self, seq, cancel=None):
         """MISSION_ITEM_INT mit passender seq; Duplikate/alte Items überspringen."""
         deadline = time.monotonic() + self.timeout
 
@@ -229,6 +259,6 @@ class MissionMicroService:
             if remaining <= 0:
                 return None
 
-            msg = self._wait_for({"MISSION_ITEM_INT"}, timeout=remaining)
+            msg = self._wait_for({"MISSION_ITEM_INT"}, timeout=remaining, cancel=cancel)
             if msg is None or msg.seq == seq:
                 return msg

@@ -2,6 +2,7 @@
 
 import threading
 
+from QGCR.communication.microservices.mission_microservice import MissionMicroService
 from QGCR.states.main_state import MainState
 from QGCR.states.base_hfsm import BaseHFSM
 
@@ -11,6 +12,7 @@ class MissionHFSM(BaseHFSM):
     MISSION:
     - MISSION_UPLOAD   → model.mission_upload_items über model.mission_ms hochladen
     - MISSION_DOWNLOAD → Mission von PX4 laden und in model.mission schreiben
+    - MISSION_STOP     → laufenden Transfer abbrechen (Mission im Model bleibt unverändert)
     - Home-Tab aktiv (model.active_tab == "Home") → READY (während eines Transfers erst danach)
     - RESET / Verbindung verloren → RESET
 
@@ -23,6 +25,7 @@ class MissionHFSM(BaseHFSM):
         self._next_state = MainState.MISSION
 
         self._job = None
+        self._job_cancel = None
         self._job_ms = None
         self._job_kind = None
         self._job_items = None
@@ -54,6 +57,9 @@ class MissionHFSM(BaseHFSM):
 
                 case "MISSION_DOWNLOAD":
                     self._start_download()
+
+                case "MISSION_STOP":
+                    self._cancel_job()
 
         # 3) Verbindung
         if not self.model.connection_ready():
@@ -110,21 +116,34 @@ class MissionHFSM(BaseHFSM):
         self._job_kind = kind
         self._job_items = items
         self._job_result = None
-        self._job = threading.Thread(target=self._run_job, args=(ms, kind, items), daemon=True)
+        self._job_cancel = threading.Event()
+        self._job = threading.Thread(
+            target=self._run_job, args=(ms, kind, items, self._job_cancel), daemon=True
+        )
         self._job.start()
 
         self._set_sub(kind)
         self._set_status(f"{name} läuft …")
 
-    def _run_job(self, ms, kind, items):
+    def _run_job(self, ms, kind, items, cancel):
         """Läuft im Worker-Thread – nur das Ergebnis ablegen."""
         try:
             if kind == "UPLOAD":
-                self._job_result = ms.upload(items)
+                self._job_result = ms.upload(items, cancel=cancel)
             else:
-                self._job_result = ms.download()
+                self._job_result = ms.download(cancel=cancel)
         except Exception as e:
             self._job_result = e
+
+    def _cancel_job(self):
+        if not self._busy():
+            self.model.log.qgcr("[MissionHFSM] Stop ignoriert: kein Transfer aktiv")
+            return
+
+        if not self._job_cancel.is_set():
+            self._job_cancel.set()
+            name = "Upload" if self._job_kind == "UPLOAD" else "Download"
+            self._set_status(f"{name} wird abgebrochen …")
 
     # ------------------------------------------------------------
     # Transfer auswerten (Update-Thread)
@@ -132,6 +151,7 @@ class MissionHFSM(BaseHFSM):
     def _finish_job(self):
         ms, kind, items, result = self._job_ms, self._job_kind, self._job_items, self._job_result
         self._job = None
+        self._job_cancel = None
         self._job_ms = None
         self._job_kind = None
         self._job_items = None
@@ -139,6 +159,11 @@ class MissionHFSM(BaseHFSM):
 
         name = "Upload" if kind == "UPLOAD" else "Download"
         error = result if isinstance(result, Exception) else getattr(ms, "last_error", None)
+
+        if error == MissionMicroService.CANCELLED:
+            # Mission im Model bleibt unverändert
+            self._set_status(f"{name} abgebrochen")
+            return
 
         if kind == "UPLOAD":
             if result is True:

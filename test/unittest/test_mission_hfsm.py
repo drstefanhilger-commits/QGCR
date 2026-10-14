@@ -4,10 +4,11 @@ import threading
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.states.mission.mission_hfsm import MissionHFSM
+from QGCR.communication.microservices.mission_microservice import MissionMicroService
 from QGCR.states.main_state import MainState
 
 
@@ -108,7 +109,7 @@ class TestMissionHFSM(unittest.TestCase):
 
         self.tick_until_idle()
 
-        self.ms.upload.assert_called_once_with(items)
+        self.ms.upload.assert_called_once_with(items, cancel=ANY)
         self.assertEqual(self.model.mission.count, 2)
         self.assertEqual(self.model.mission_status, "Upload OK (2 Items)")
 
@@ -144,7 +145,7 @@ class TestMissionHFSM(unittest.TestCase):
     # --------------------------------------------------------
     def blocking_download(self):
         release = threading.Event()
-        self.ms.download.side_effect = lambda: (release.wait(2), [item(0)])[1]
+        self.ms.download.side_effect = lambda **kw: (release.wait(2), [item(0)])[1]
         self.model.hfsm_events.append("MISSION_DOWNLOAD")
         self.fsm.on_update()
         self.assertEqual(self.model.hfsm_sub, "DOWNLOAD")
@@ -187,6 +188,83 @@ class TestMissionHFSM(unittest.TestCase):
         self.model.hfsm_events.append("RESET")
         self.assertEqual(self.fsm.on_update(), MainState.RESET)
         release.set()
+
+    # --------------------------------------------------------
+    # Stop (MISSION_STOP)
+    # --------------------------------------------------------
+    def cancellable_download(self):
+        """download() wartet, bis der übergebene cancel gesetzt wird."""
+        self.cancels = []
+
+        def download(cancel=None):
+            self.cancels.append(cancel)
+            cancel.wait(2)
+            self.ms.last_error = MissionMicroService.CANCELLED
+            return [item(0)]
+
+        self.ms.download.side_effect = download
+        self.model.hfsm_events.append("MISSION_DOWNLOAD")
+        self.fsm.on_update()
+
+    def test_stop_cancels_running_transfer(self):
+        self.model.add_mission_item(0, 16, 1.0, 2.0, 3.0)
+        self.cancellable_download()
+
+        self.model.hfsm_events.append("MISSION_STOP")
+        self.fsm.on_update()
+        self.assertEqual(self.model.mission_status, "Download wird abgebrochen …")
+        self.assertTrue(self.cancels[0].is_set())
+
+        self.tick_until_idle()
+        self.assertEqual(self.model.mission_status, "Download abgebrochen")
+        self.assertEqual(self.model.mission.items, [{"seq": 0, "command": 16, "x": 1.0, "y": 2.0, "z": 3.0}])
+
+    def test_stop_cancels_upload(self):
+        def upload(items, cancel=None):
+            cancel.wait(2)
+            self.ms.last_error = MissionMicroService.CANCELLED
+            return False
+
+        self.ms.upload.side_effect = upload
+        self.model.mission_upload_items = [item(0)]
+        self.model.hfsm_events.append("MISSION_UPLOAD")
+        self.fsm.on_update()
+
+        self.model.hfsm_events.append("MISSION_STOP")
+        self.tick_until_idle()
+
+        self.assertEqual(self.model.mission_status, "Upload abgebrochen")
+        self.assertEqual(self.model.mission.count, 0)
+
+    def test_stop_without_transfer_is_ignored(self):
+        self.model.hfsm_events.append("MISSION_STOP")
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+        self.assertEqual(self.model.mission_status, "-")
+        self.assertIn("[QGCR] [MissionHFSM] Stop ignoriert: kein Transfer aktiv", self.model.qgcr_logs())
+
+    def test_each_transfer_gets_fresh_cancel(self):
+        self.cancellable_download()
+        self.model.hfsm_events.append("MISSION_STOP")
+        self.tick_until_idle()
+
+        self.ms.last_error = None
+        self.ms.download.side_effect = None
+        self.ms.download.return_value = [item(0)]
+        self.model.hfsm_events.append("MISSION_DOWNLOAD")
+        self.tick_until_idle()
+
+        cancel = self.ms.download.call_args.kwargs["cancel"]
+        self.assertIsNot(cancel, self.cancels[0])
+        self.assertFalse(cancel.is_set())
+        self.assertEqual(self.model.mission_status, "Download OK (1 Items)")
+
+    def test_home_tab_after_cancel_goes_ready(self):
+        self.cancellable_download()
+        self.model.active_tab = "Home"
+        self.assertEqual(self.fsm.on_update(), MainState.MISSION)
+
+        self.model.hfsm_events.append("MISSION_STOP")
+        self.assertEqual(self.tick_until_idle(), MainState.READY)
 
 
 if __name__ == "__main__":
