@@ -350,6 +350,14 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
 
 ---
 
+# 📌 Offene Punkte
+
+- **FSL-Abfang im PX4 (Weg A, Prototyp):** Berechnung aus `model/intercept.py` als eigene
+  PX4-FlightTask; Prototyp über den vorhandenen Zustand `AUTO_FOLLOW_TARGET`, später eigener
+  Zustand. Kein Offboard. Details und nötige PX4-Änderungen: [`docs/px4_fsl_intercept.md`](docs/px4_fsl_intercept.md)
+
+---
+
 # 📁 Altbestand (`Obsolete/`)
 
 Module, die von `main.py` aus nicht erreichbar waren, liegen mit unveränderter Ordnerstruktur unter
