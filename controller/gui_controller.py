@@ -300,6 +300,9 @@ class GUIController:
                 "circle": geometry["circle"],
                 "trigger_path": [p[:2] for p in geometry["trigger_path"]],
                 "wait": geometry["wait"][:2] if geometry["wait"] else None,
+                "trigger_now": geometry["trigger_now"][:2] if geometry["trigger_now"] else None,
+                "trigger_id": geometry["trigger_id"],
+                "trigger_heading": geometry["trigger_heading"],
             }
 
         return {

@@ -1,6 +1,7 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_controller_gui_controller.py ===
 
 import os
+import time
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -329,6 +330,13 @@ class TestControllerGUIControllerFsl(unittest.TestCase):
         self.assertEqual(data["circle"], ((47.397971, 8.546164), 200.0))
         self.assertEqual(len(data["trigger_path"]), 2)
         self.assertEqual(len(data["wait"]), 2)
+        self.assertIsNone(data["trigger_now"])                 # kein Trigger im Model
+
+        self.model.intercept_trigger = Trigger("T", time.time(), -150, 100, 20, 5, 0, 0)
+        self.model.intercept_plan = plan_intercept(self.model.intercept_trigger, time.time(), InterceptConfig())
+        data = self.gui.get_plot_data()
+        self.assertEqual(len(data["trigger_now"]), 2)
+        self.assertEqual((data["trigger_id"], data["trigger_heading"]), ("T", 90.0))
 
 
 if __name__ == "__main__":

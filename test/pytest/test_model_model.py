@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # === PFAD-B FULL FILE: QGCR/pytest/test_model_model.py ===
 
+import math
 import time
 import pytest
 
@@ -374,3 +375,29 @@ def test_intercept_geometry():
     lat, lon, alt = g["wait"]
     assert alt == 20.0
     assert abs((lat - 47.0) * 111_320.0 - 100.0) < 0.5    # 100 m nördlich
+
+
+def test_intercept_trigger_moves_with_time(monkeypatch):
+    import QGCR.model.model as model_mod
+    from QGCR.model.intercept import InterceptConfig, Trigger, plan_intercept
+    now = [1000.0]
+    monkeypatch.setattr(model_mod.time, "time", lambda: now[0])
+
+    m = Model(QueueRegistry())
+    m.intercept_origin = (47.0, 8.0)
+    m.intercept_trigger = Trigger("T5", 1000.0, -150, 100, 20, 5, 0, 0)
+    m.intercept_plan = plan_intercept(m.intercept_trigger, 1000.0, InterceptConfig())
+
+    def east_m():
+        lat, lon, _ = m.intercept_geometry()["trigger_now"]
+        return (lon - 8.0) * 111_320.0 * math.cos(math.radians(47.0))
+
+    assert abs(east_m() - (-150)) < 0.1
+    now[0] = 1010.0                                     # 10 s später: 50 m weiter östlich
+    assert abs(east_m() - (-100)) < 0.1
+
+    g = m.intercept_geometry()
+    assert g["trigger_id"] == "T5" and g["trigger_heading"] == 90.0
+
+    now[0] = 1000.0 + 10_000                            # weit hinter dem Bahnende
+    assert m.intercept_geometry()["trigger_now"] is None

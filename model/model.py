@@ -326,7 +326,10 @@ class Model:
         """
         Anzeige-Geometrie der FSL-Planung in lat/lon (Plot + Gazebo) oder None:
         {"circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon, alt), ...],
-         "wait": (lat, lon, alt) | None}
+         "wait": (lat, lon, alt) | None,
+         "trigger_now": (lat, lon, alt) | None,   # aktuelle Position (Zeitstempel + v·Δt)
+         "trigger_id": str, "trigger_heading": Kurs in Grad}
+        trigger_now nur, solange der Trigger auf der gezeichneten Bahn ist.
         """
         from QGCR.model.intercept import enu_to_latlon
 
@@ -338,10 +341,23 @@ class Model:
             lat, lon = enu_to_latlon(origin, p[0], p[1])
             return (lat, lon, p[2])
 
+        trigger = self.intercept_trigger
+        trigger_now = None
+        if trigger is not None and len(plan.path) >= 2 and trigger.ground_speed > 0:
+            now = trigger.position_at(time.time())
+            (e0, n0, _), (e1, n1, _) = plan.path[0], plan.path[1]
+            length = math.hypot(e1 - e0, n1 - n0)
+            along = ((now[0] - e0) * (e1 - e0) + (now[1] - n0) * (n1 - n0)) / length if length else 0.0
+            if 0.0 <= along <= length:
+                trigger_now = geo(now)
+
         return {
             "circle": (origin, self.INTERCEPT_CIRCLE_M),
             "trigger_path": [geo(p) for p in plan.path],
             "wait": geo(plan.wait) if plan.wait else None,
+            "trigger_now": trigger_now,
+            "trigger_id": trigger.drone_id if trigger else "",
+            "trigger_heading": plan.heading_deg,
         }
 
     def landing_point(self):

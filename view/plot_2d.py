@@ -16,7 +16,8 @@ class Plot2D(tk.Canvas):
         "start": (lat, lon) | None, "landing": (lat, lon) | None,
         "vehicle": (lat, lon) | None,
         optional (FSL-Tab): "circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon), ...],
-        "wait": (lat, lon) | None
+        "wait": (lat, lon) | None, "trigger_now": (lat, lon) | None,
+        "trigger_id": str, "trigger_heading": Grad (0 = Nord)
     }
     """
 
@@ -156,6 +157,19 @@ class Plot2D(tk.Canvas):
             self.create_polygon(x, y - 9, x + 9, y, x, y + 9, x - 9, y,
                                 fill="gold", outline="darkorange", tags=("wait",))
             self.create_text(x, y - 17, text="Wartepunkt", fill="darkorange", tags=("wait",))
+
+        # Trigger-Drohne jetzt: lila Dreieck in Flugrichtung + ID (nicht im Maßstab berücksichtigt)
+        if data.get("trigger_now"):
+            x, y = px(self._to_metres(origin, data["trigger_now"][:2]))
+            h = math.radians(data.get("trigger_heading") or 0.0)
+            fx, fy = math.sin(h), -math.cos(h)          # Bildschirm: y nach unten
+            rx, ry = -fy, fx
+            tip = (x + 12 * fx, y + 12 * fy)
+            left = (x - 8 * fx + 7 * rx, y - 8 * fy + 7 * ry)
+            right = (x - 8 * fx - 7 * rx, y - 8 * fy - 7 * ry)
+            self.create_polygon(*tip, *left, *right, fill="purple", outline="black", tags=("trigger",))
+            self.create_text(x, y + 18, text=data.get("trigger_id") or "Trigger", fill="purple",
+                             tags=("trigger",))
 
         # Aktuelle Position
         if "vehicle" in singles:

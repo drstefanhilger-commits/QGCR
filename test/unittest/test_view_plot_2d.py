@@ -81,6 +81,27 @@ class TestViewPlot2D(unittest.TestCase):
         self.assertGreaterEqual(min(x0, y0), 0)
         self.assertLessEqual(x1, max(self.plot.winfo_width(), 400))   # Plot rechnet mit min. 400 px
 
+    def test_trigger_symbol_points_in_flight_direction(self):
+        self.plot.draw(self.data(start=START, trigger_path=[START, EAST_100M], trigger_now=NORTH_100M,
+                                 trigger_id="T1", trigger_heading=90.0))
+        items = self.tagged("trigger")
+        poly = [i for i in items if self.plot.type(i) == "polygon"][0]
+        xs = self.plot.coords(poly)[0::2]
+        ys = self.plot.coords(poly)[1::2]
+        cx = sum(xs[1:]) / 2                                   # Mitte der Basis
+        self.assertGreater(xs[0], cx + 10)                      # Spitze zeigt nach Osten
+        self.assertAlmostEqual(ys[0], (ys[1] + ys[2]) / 2, delta=1)
+        texts = [self.plot.itemcget(i, "text") for i in items if self.plot.type(i) == "text"]
+        self.assertEqual(texts, ["T1"])
+
+    def test_trigger_symbol_moves(self):
+        d = self.data(start=START, trigger_path=[START, EAST_100M], trigger_heading=90.0, trigger_id="T1")
+        self.plot.draw(dict(d, trigger_now=START))
+        x_a = self.plot.coords([i for i in self.tagged("trigger") if self.plot.type(i) == "polygon"][0])[0]
+        self.plot.draw(dict(d, trigger_now=EAST_100M))
+        x_b = self.plot.coords([i for i in self.tagged("trigger") if self.plot.type(i) == "polygon"][0])[0]
+        self.assertGreater(x_b, x_a)
+
     def test_no_redraw_for_same_data(self):
         d = self.data(track=[START, NORTH_100M], start=START)
         self.plot.draw(d)
