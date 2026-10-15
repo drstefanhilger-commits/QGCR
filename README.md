@@ -261,6 +261,7 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
   (HomeTab) gedrückt wird.
 - Höhen-Plot (`view/plot_alt.py`) unter dem 2D-Plot: Höhe über Home [m] über der Zeit seit
   Missionsstart [s] (`model.mission_alt_track`, höchstens alle 0,5 s ein Punkt), aktueller Wert oben rechts.
+  Beispiel: `docs/home_tab_plots_vtol_mission.png`
   Beispiel: `docs/plot_2d_vtol_mission.png` (fsl_rocket_vtol, SITL)
 - Gazebo: dieselben Start-/Landepunkte (`model.mission_markers()`) setzt `GazeboMarkers` in die Welt
   (lat/lon → ENU um `<spherical_coordinates>` der World-SDF). Nach RESET/Modellwechsel (neue
