@@ -2,11 +2,14 @@
 
 import gc
 import math
+import threading
 import os
 import tempfile
 import time
 import unittest
 from unittest.mock import patch
+
+from pymavlink import mavutil
 
 from QGCR.main import Application
 from QGCR.model.intercept import enu_to_latlon
@@ -117,6 +120,66 @@ class TestPX4ApplicationIntercept(unittest.TestCase):
                               (p[1] - q[1]) * 111_320.0 * math.cos(math.radians(p[0])))
         self.assertLess(min(dist_m(p, wait_ll) for p in m.mission_track), 5.0)
         self.assertLess(dist_m(m.mission_track[-1], m.intercept_origin), 3.0)
+
+    # ------------------------------------------------------------
+    # Akku-Abbruch (Variante 1): SIM_BAT_MIN_PCT senken → RTL
+    # ------------------------------------------------------------
+    def set_px4_param(self, name, value, timeout=10.0):
+        """PARAM_SET senden und auf die Bestätigung (PARAM_VALUE) warten."""
+        confirmed = threading.Event()
+        dispatcher = self.app.dispatcher
+        original = dispatcher.dispatch
+
+        def hook(msg):
+            if msg.get_type() == "PARAM_VALUE" and msg.param_id == name \
+                    and abs(msg.param_value - value) < 1e-3:
+                confirmed.set()
+            original(msg)
+
+        dispatcher.dispatch = hook
+        try:
+            master = self.app.connection.master
+            msg = mavutil.mavlink.MAVLink_param_set_message(
+                master.target_system, master.target_component, name.encode(), float(value),
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32)
+            deadline = time.time() + timeout
+            while not confirmed.is_set() and time.time() < deadline:
+                self.app.connection.send(msg)
+                end = time.time() + 1.0
+                while time.time() < end and not confirmed.is_set():
+                    self.app.root.update()
+                    time.sleep(0.05)
+            return confirmed.is_set()
+        finally:
+            dispatcher.dispatch = original
+
+    def test_low_battery_triggers_rtl(self):
+        m = self.model
+        self.pump_until(lambda: m.hfsm_main == "READY" and m.ready_to_arm
+                        and getattr(m, "mission_ms", None) is not None, 150, "READY")
+
+        # PX4 speichert Parameter in SITL dauerhaft → in jedem Fall zurücksetzen
+        self.assertTrue(self.set_px4_param("SIM_BAT_MIN_PCT", 10.0), "SIM_BAT_MIN_PCT nicht gesetzt")
+        try:
+            self.select_tab("FSL")
+            self.pump_until(lambda: m.hfsm_main == "INTERCEPT", 5, "INTERCEPT")
+            tab = self.app.window.fsl_tab
+            tab.vars["battery_min"].set("30")
+            self.pump_until(lambda: str(tab.btn_trigger["state"]) == "normal", 5, "Trigger-Button")
+            tab.btn_trigger.invoke()
+
+            self.pump_until(lambda: m.hfsm_sub == "FLIGHT", 30, "FLIGHT")
+            self.pump_until(lambda: m.hfsm_sub == "RTL", 90, "RTL wegen Akku")
+            self.assertRegex(m.intercept_status, r"^Akku \d+ % < 30 % → zurück zum Start")
+            self.assertLess(m.battery_remaining, 30)
+
+            self.pump_until(lambda: m.hfsm_sub == "IDLE" and not m.px4_armed, 180, "nach RTL gelandet")
+            dist = math.hypot((m.vehicle_lat - m.intercept_origin[0]) * 111_320.0,
+                              (m.vehicle_lon - m.intercept_origin[1]) * 111_320.0
+                              * math.cos(math.radians(m.intercept_origin[0])))
+            self.assertLess(dist, 3.0, "nicht am Start gelandet")
+        finally:
+            self.assertTrue(self.set_px4_param("SIM_BAT_MIN_PCT", 50.0), "SIM_BAT_MIN_PCT nicht zurückgesetzt")
 
 
 if __name__ == "__main__":

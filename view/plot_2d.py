@@ -17,7 +17,8 @@ class Plot2D(tk.Canvas):
         "vehicle": (lat, lon) | None,
         optional (FSL-Tab): "circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon), ...],
         "wait": (lat, lon) | None, "trigger_now": (lat, lon) | None,
-        "trigger_id": str, "trigger_heading": Grad (0 = Nord)
+        "trigger_id": str, "trigger_heading": Grad (0 = Nord),
+        "trigger_distance": Abstand Trigger–FSL [m] | None (Linie Trigger ↔ Position mit Beschriftung)
     }
     """
 
@@ -157,6 +158,14 @@ class Plot2D(tk.Canvas):
             self.create_polygon(x, y - 9, x + 9, y, x, y + 9, x - 9, y,
                                 fill="gold", outline="darkorange", tags=("wait",))
             self.create_text(x, y - 17, text="Wartepunkt", fill="darkorange", tags=("wait",))
+
+        # Abstand Trigger ↔ FSL: gestrichelte Linie mit Beschriftung
+        if data.get("trigger_now") and "vehicle" in singles and data.get("trigger_distance") is not None:
+            tx, ty = px(self._to_metres(origin, data["trigger_now"][:2]))
+            vx, vy = px(singles["vehicle"])
+            self.create_line(tx, ty, vx, vy, fill="gray40", dash=(3, 3), tags=("distance",))
+            self.create_text((tx + vx) / 2, (ty + vy) / 2 - 9, text=f"{data['trigger_distance']:.0f} m",
+                             fill="gray20", tags=("distance",))
 
         # Trigger-Drohne jetzt: lila Dreieck in Flugrichtung + ID (nicht im Maßstab berücksichtigt)
         if data.get("trigger_now"):

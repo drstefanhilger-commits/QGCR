@@ -268,6 +268,9 @@ class GUIController:
 
         battery = f"{m.battery_remaining:.0f} %" if m.battery_remaining is not None else "-"
         flight = f"Akku: {battery}   Höhe: {m.vehicle_alt:.1f} m   Modus: {m.px4_mode}"
+        distance = m.intercept_distance()
+        if distance is not None:
+            flight += f"\nAbstand Trigger–FSL: {distance[0]:.0f} m (horizontal {distance[1]:.0f} m)"
         model_hint = "" if fsl else f"\nModell {self.FSL_MODEL} erforderlich"
         tab.show_status(f"{m.hfsm_main}/{sub}", f"{m.intercept_status}{model_hint}", plan_text, flight)
 
@@ -301,6 +304,7 @@ class GUIController:
                 "trigger_path": [p[:2] for p in geometry["trigger_path"]],
                 "wait": geometry["wait"][:2] if geometry["wait"] else None,
                 "trigger_now": geometry["trigger_now"][:2] if geometry["trigger_now"] else None,
+                "trigger_distance": (m.intercept_distance() or (None,))[0],
                 "trigger_id": geometry["trigger_id"],
                 "trigger_heading": geometry["trigger_heading"],
             }

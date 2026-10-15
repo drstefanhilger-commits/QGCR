@@ -9,6 +9,7 @@ from QGCR.controller.gui_controller import GUIController
 from QGCR.test.unittest.dummy_model import DummyModel
 from QGCR.test.unittest.plan_fixture import write_plan
 from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
+from QGCR.model.intercept import InterceptConfig, Trigger, plan_intercept
 
 
 class TestControllerGUIController(unittest.TestCase):
@@ -321,6 +322,18 @@ class TestControllerGUIControllerFsl(unittest.TestCase):
         self.gui.update_fsl_tab()
         window.home_tab.set_buttons_enabled.assert_called_once_with(True)
 
+    def test_fsl_status_shows_distance(self, _print):
+        window = MagicMock()
+        self.gui.main_window = window
+        self.model.intercept_origin = (47.0, 8.0)
+        self.model.intercept_trigger = Trigger("T", time.time(), 0, 100, 0, 5, 0, 0)
+        self.model.update_vehicle_position(47.0, 8.0, 0.0)
+
+        self.gui.update_fsl_tab()
+
+        flight_text = window.fsl_tab.show_status.call_args[0][3]
+        self.assertIn("Abstand Trigger–FSL: 100 m (horizontal 100 m)", flight_text)
+
     def test_plot_data_with_intercept_geometry(self, _print):
         from QGCR.model.intercept import InterceptConfig, Trigger, plan_intercept
         self.model.intercept_origin = (47.397971, 8.546164)
@@ -337,6 +350,9 @@ class TestControllerGUIControllerFsl(unittest.TestCase):
         data = self.gui.get_plot_data()
         self.assertEqual(len(data["trigger_now"]), 2)
         self.assertEqual((data["trigger_id"], data["trigger_heading"]), ("T", 90.0))
+        self.assertIsNone(data["trigger_distance"])            # FSL-Position unbekannt
+        self.model.update_vehicle_position(47.397971, 8.546164, 0.0)
+        self.assertGreater(self.gui.get_plot_data()["trigger_distance"], 150)
 
 
 if __name__ == "__main__":

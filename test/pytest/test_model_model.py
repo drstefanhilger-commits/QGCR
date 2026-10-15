@@ -401,3 +401,27 @@ def test_intercept_trigger_moves_with_time(monkeypatch):
 
     now[0] = 1000.0 + 10_000                            # weit hinter dem Bahnende
     assert m.intercept_geometry()["trigger_now"] is None
+
+
+def test_intercept_distance(monkeypatch):
+    import QGCR.model.model as model_mod
+    from QGCR.model.intercept import Trigger
+    now = [1000.0]
+    monkeypatch.setattr(model_mod.time, "time", lambda: now[0])
+
+    m = Model(QueueRegistry())
+    assert m.intercept_distance() is None
+    m.intercept_origin = (47.0, 8.0)
+    m.intercept_trigger = Trigger("T", 1000.0, -150, 100, 20, 5, 0, 0)
+    assert m.intercept_distance() is None                   # FSL-Position unbekannt
+
+    m.update_vehicle_position(47.0, 8.0, 0.0)               # FSL am Start, am Boden
+    d3, dh = m.intercept_distance()
+    assert abs(dh - math.hypot(150, 100)) < 0.1
+    assert abs(d3 - math.sqrt(150**2 + 100**2 + 20**2)) < 0.1
+
+    now[0] = 1010.0                                         # Trigger 50 m weiter östlich
+    m.update_vehicle_position(47.0, 8.0, 20.0)              # FSL auf 20 m
+    d3, dh = m.intercept_distance()
+    assert abs(dh - math.hypot(100, 100)) < 0.1
+    assert abs(d3 - dh) < 0.1                               # gleiche Höhe

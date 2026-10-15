@@ -102,6 +102,17 @@ class TestViewPlot2D(unittest.TestCase):
         x_b = self.plot.coords([i for i in self.tagged("trigger") if self.plot.type(i) == "polygon"][0])[0]
         self.assertGreater(x_b, x_a)
 
+    def test_distance_line_between_trigger_and_vehicle(self):
+        d = self.data(start=START, trigger_path=[START, EAST_100M], trigger_now=EAST_100M,
+                      trigger_heading=90.0, trigger_id="T1", trigger_distance=141.4)
+        self.plot.draw(dict(d, vehicle=NORTH_100M))
+        texts = [self.plot.itemcget(i, "text") for i in self.tagged("distance")
+                 if self.plot.type(i) == "text"]
+        self.assertEqual(texts, ["141 m"])
+
+        self.plot.draw(d)                                    # ohne FSL-Position: keine Linie
+        self.assertFalse(self.tagged("distance"))
+
     def test_no_redraw_for_same_data(self):
         d = self.data(track=[START, NORTH_100M], start=START)
         self.plot.draw(d)

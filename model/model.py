@@ -360,6 +360,26 @@ class Model:
             "trigger_heading": plan.heading_deg,
         }
 
+    def intercept_distance(self):
+        """
+        Abstand Trigger-Drohne ↔ FSL jetzt: (3D [m], horizontal [m]) oder None.
+        Trigger: Zeitstempel + Geschwindigkeit (relativ zum Startpunkt der Planung);
+        FSL: aktuelle Position, Höhe über Home.
+        """
+        from QGCR.model.intercept import EARTH_M_PER_DEG
+
+        trigger, origin = self.intercept_trigger, self.intercept_origin
+        if trigger is None or origin is None or self.vehicle_lat is None or self.vehicle_lon is None:
+            return None
+
+        te, tn, tu = trigger.position_at(time.time())
+        fe = (self.vehicle_lon - origin[1]) * EARTH_M_PER_DEG * math.cos(math.radians(origin[0]))
+        fn = (self.vehicle_lat - origin[0]) * EARTH_M_PER_DEG
+        fu = self.vehicle_alt or 0.0
+
+        horizontal = math.hypot(te - fe, tn - fn)
+        return math.hypot(horizontal, tu - fu), horizontal
+
     def landing_point(self):
         """(lat, lon) der Landung aus der Mission (NAV_LAND / NAV_VTOL_LAND) oder None."""
         for item in reversed(self.mission.items):

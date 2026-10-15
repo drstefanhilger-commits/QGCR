@@ -267,6 +267,12 @@ sind die HomeTab-Buttons und die Modellauswahl gesperrt; mit anderem Modell biet
   Trigger-Bahn → `NAV_LAND` am Startpunkt. Start per `MAV_CMD_MISSION_START`.
 - **Überwachung:** Timeout (Default 180 s ab Start) oder Akku < Minimum (Default 30 %,
   `SYS_STATUS.battery_remaining`) bzw. „Abbrechen“ → RTL (`MAV_CMD_NAV_RETURN_TO_LAUNCH`).
+  SITL: die simulierte Batterie fällt im Flug nur bis `SIM_BAT_MIN_PCT` (PX4-Default 50 %) und wird
+  am Boden wieder voll – mit dem Default-Minimum 30 % löst die Überwachung in SITL daher nie aus.
+  Der SITL-Test `test_low_battery_triggers_rtl` setzt `SIM_BAT_MIN_PCT` vorübergehend auf 10 %
+  (PX4 speichert Parameter dauerhaft; der Test setzt sie wieder auf 50 % zurück).
+- **Abstand Trigger–FSL:** laufend in der Statuszeile (3D und horizontal) und im 2D-Plot als
+  gestrichelte Linie zwischen Trigger-Symbol und FSL-Position.
 - **Anzeige:** 2D-Plot mit 200-m-Kreis, Trigger-Bahn (lila) und Wartepunkt (gelbe Raute);
   Gazebo: Start, Landung, Trigger-Bahn (lila Stab in Flughöhe) und Wartepunkt (gelbe Kugel).
   Beispiel: `docs/fsl_tab_intercept.png`
