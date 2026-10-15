@@ -46,7 +46,8 @@ class MainController:
             self._switch_to(MainState.AIRBORNE)
             return
 
-        if event == "RESET":
+        # RESET im Flug übernimmt die AirborneHFSM (erst landen, dann RESET)
+        if event == "RESET" and self.active_state != MainState.AIRBORNE:
             self.model.hfsm_events.popleft()
             self._switch_to(MainState.RESET)
             return

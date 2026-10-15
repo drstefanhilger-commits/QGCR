@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_controller_main_controller.py ===
 
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -13,7 +14,10 @@ from QGCR.test.unittest.dummy_model import DummyModel
 class TestControllerMainController(unittest.TestCase):
 
     def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.model = DummyModel()
+        self.model.base_path = self.tmp.name      # Reset-Backup nicht ins cwd
         self.model.takeoff = MagicMock()
         self.model.takeoff.STATE_IDLE = "IDLE"
         self.model.takeoff.state = "IDLE"
@@ -30,6 +34,35 @@ class TestControllerMainController(unittest.TestCase):
         self.ctrl.on_update()
 
         self.assertEqual(self.ctrl.active_state, MainState.AIRBORNE)
+
+    def test_reset_in_ready_is_immediate(self, _starter):
+        self.ctrl.on_update()                            # → READY
+        self.model.hfsm_events.append("RESET")
+        self.ctrl.on_update()                            # RESET läuft in einem Tick durch → STARTUP
+
+        self.assertIn("[QGCR] HFSM-Wechsel: READY → RESET", self.model.qgcr_logs())
+
+    def test_reset_in_airborne_goes_to_airborne_hfsm(self, _starter):
+        conn = MagicMock()
+        conn.master.target_system = 1
+        conn.master.target_component = 1
+        self.model.connection = conn
+
+        self.ctrl.on_update()                            # → READY
+        self.model.hfsm_events.append("TAKEOFF")
+        self.ctrl.on_update()                            # → AIRBORNE
+        self.ctrl.on_update()                            # AIRBORNE: enter
+        self.model.px4_armed = True
+
+        self.model.hfsm_events.append("RESET")
+        self.ctrl.on_update()
+
+        self.assertEqual(self.ctrl.active_state, MainState.AIRBORNE)
+        self.assertEqual(self.model.hfsm_sub, "RESET_LAND")
+
+        self.model.px4_armed = False                     # gelandet
+        self.ctrl.on_update()
+        self.assertEqual(self.ctrl.active_state, MainState.RESET)
 
     def test_stale_events_dropped_on_switch_to_ready(self, _starter):
         self.model.hfsm_events.append("TAKEOFF_ALT")     # Rest aus dem Vorzyklus

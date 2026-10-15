@@ -12,7 +12,9 @@ class AirborneHFSM(BaseHFSM):
     - LAND  → MAV_CMD_NAV_LAND, hfsm_sub = LAND; nach Landung (PX4 disarmt) → READY
     - MISSION_START → MAV_CMD_MISSION_START (AUTO.MISSION im Flug), hfsm_sub = MISSION;
       Mission endet mit Landung (PX4 disarmt) → READY
-    - RESET / Verbindung verloren → RESET
+    - RESET → erst landen (NAV_LAND, hfsm_sub = RESET_LAND), nach Landung + Disarm → RESET;
+              nicht armed / kein PX4-Ziel → sofort RESET; zweiter RESET während der Landung → sofort
+    - Verbindung verloren → RESET
     """
 
     def __init__(self, model):
@@ -20,6 +22,7 @@ class AirborneHFSM(BaseHFSM):
         self._next_state = MainState.AIRBORNE
         self._landing = False
         self._seen_armed = False
+        self._reset_requested = False
 
     def _on_enter(self):
         self.model.log.qgcr("[AirborneHFSM] entering AIRBORNE")
@@ -43,9 +46,9 @@ class AirborneHFSM(BaseHFSM):
 
             match event:
                 case "RESET":
-                    self.model.log.qgcr("[AirborneHFSM] RESET received")
-                    self._next_state = MainState.RESET
-                    return
+                    if self._request_reset():
+                        self._next_state = MainState.RESET
+                        return
 
                 case "LAND":
                     self._start_landing()
@@ -62,16 +65,47 @@ class AirborneHFSM(BaseHFSM):
         if self.model.px4_armed:
             self._seen_armed = True
         elif self._seen_armed and (self._landing or self.model.mission_running):
-            self.model.log.qgcr("[AirborneHFSM] gelandet und disarmed → READY")
             self._reset_takeoff()
             self.model.mission_running = False
-            self._next_state = MainState.READY
+            if self._reset_requested:
+                self.model.log.qgcr("[AirborneHFSM] gelandet und disarmed → RESET")
+                self._next_state = MainState.RESET
+            else:
+                self.model.log.qgcr("[AirborneHFSM] gelandet und disarmed → READY")
+                self._next_state = MainState.READY
             return
 
         self._next_state = MainState.AIRBORNE
 
     def _on_exit(self):
         return self._next_state
+
+    # ------------------------------------------------------------
+    # RESET im Flug
+    # ------------------------------------------------------------
+    def _request_reset(self):
+        """
+        True → sofort RESET. Sonst wird zuerst gelandet (RESET nach Landung + Disarm).
+        """
+        if self._reset_requested:
+            self.model.log.qgcr("[AirborneHFSM] zweiter RESET während der Landung → sofort RESET")
+            return True
+
+        if not self.model.px4_armed:
+            self.model.log.qgcr("[AirborneHFSM] RESET (nicht armed) → sofort")
+            return True
+
+        if not self._landing:
+            self._start_landing()
+            if not self._landing:          # kein PX4-Ziel → Landung nicht möglich
+                self.model.log.qgcr("[AirborneHFSM] RESET: Landung nicht möglich → sofort")
+                return True
+
+        self._reset_requested = True
+        self.model.hfsm_sub = "RESET_LAND"
+        self.model.push_state_update()
+        self.model.log.qgcr("[AirborneHFSM] RESET: erst landen, dann RESET")
+        return False
 
     # ------------------------------------------------------------
     # LAND

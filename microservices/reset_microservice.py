@@ -18,6 +18,9 @@ class ResetMicroService:
     4) done=True setzen
 
     Wird von AirborneResetFSM gestartet und tickt im Model-Update-Loop.
+
+    ACHTUNG: DISARM in der Luft = Absturz. Derzeit nicht verwendet; RESET im Flug
+    landet stattdessen zuerst (AirborneHFSM, NAV_LAND) und startet erst danach neu.
     """
 
     def __init__(self, model):

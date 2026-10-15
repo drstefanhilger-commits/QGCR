@@ -199,7 +199,8 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 
 - startet in `STARTUP`, tickt pro `on_update()` genau die aktive HFSM
 - erzeugt bei jedem Wechsel eine **neue** HFSM-Instanz
-- globale Events vor jedem Tick: `TAKEOFF_DONE` → AIRBORNE, `RESET` → RESET,
+- globale Events vor jedem Tick: `TAKEOFF_DONE` → AIRBORNE, `RESET` → RESET (außer in AIRBORNE:
+  dort landet die AirborneHFSM zuerst),
   `RESET_DONE` bzw. `model.reset_done` → STARTUP
 - beim Wechsel nach READY verwirft er alte `hfsm_events` – bevor `hfsm_main = READY` sichtbar wird,
   damit ein direkt danach geklicktes TAKEOFF nicht verloren geht
@@ -210,7 +211,7 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 |---|---|---|
 | `STARTUP` | `StartupHFSM` | Enter: `PX4SwarmStarter(model.vehicle_configs).start_all()` (oder vorhandenen `model.startup_controller` wiederverwenden). → `READY`, sobald `connection_ready()` und `heartbeat_ok()` |
 | `READY` | `ReadyHFSM` | Tickt `model.takeoff`. `TAKEOFF` → AIRBORNE, `RESET` → RESET, Mission-Tab aktiv (`model.active_tab`) → MISSION, `ARM` / `DISARM` → `MAV_CMD_COMPONENT_ARM_DISARM` über `model.connection` (bleibt READY). Nach 5 s Schonfrist: Verbindung verloren → RESET |
-| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `MISSION_START` (HomeTab „MISSION“) → AUTO.MISSION im Flug (`hfsm_sub` MISSION). Läuft eine Mission (auch vom Boden gestartet), startet AIRBORNE keinen eigenen Takeoff; endet sie mit Landung (PX4 disarmt) → READY. `RESET` → RESET, Verbindung verloren → RESET |
+| `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE. Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `MISSION_START` (HomeTab „MISSION“) → AUTO.MISSION im Flug (`hfsm_sub` MISSION). Läuft eine Mission (auch vom Boden gestartet), startet AIRBORNE keinen eigenen Takeoff; endet sie mit Landung (PX4 disarmt) → READY. `RESET` im Flug: erst landen (NAV_LAND, `hfsm_sub` RESET_LAND), nach Landung + Disarm → RESET; nicht armed / kein PX4-Ziel → sofort; zweiter RESET während der Landung → sofort. Verbindung verloren → RESET |
 | `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). `MISSION_START` (Button „Start“) → `MAV_CMD_MISSION_START` (PX4 armt + AUTO.MISSION, `hfsm_sub` START); sobald armed und AUTO.MISSION → AIRBORNE mit `model.mission_running`, sonst nach 10 s Statusmeldung. Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, Heartbeat-Status verwerfen (`model.reset_heartbeat()`), `reset_done=True` → STARTUP |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |

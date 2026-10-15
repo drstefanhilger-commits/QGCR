@@ -125,13 +125,72 @@ class TestAirborneHFSM(unittest.TestCase):
         conn.send.assert_not_called()
         self.assertEqual(self.model.hfsm_sub, "FLIGHT")
 
-    def test_reset_while_landing_goes_reset(self):
-        self.start_flight()
+    # --------------------------------------------------------
+    # RESET im Flug: erst landen, dann RESET
+    # --------------------------------------------------------
+    def test_reset_in_flight_lands_first(self):
+        conn = self.start_flight()
+        self.model.hfsm_events.append("RESET")
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+        self.assertEqual(conn.send.call_args[0][0].command, mavutil.mavlink.MAV_CMD_NAV_LAND)
+        self.assertEqual(self.model.hfsm_sub, "RESET_LAND")
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)   # Landung läuft
+
+        self.model.px4_armed = False                                 # gelandet, disarmed
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    def test_reset_while_landing_becomes_reset_landing(self):
+        conn = self.start_flight()
         self.model.hfsm_events.append("LAND")
         self.fsm.on_update()
         self.model.hfsm_events.append("RESET")
 
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+        conn.send.assert_called_once()                               # kein zweites NAV_LAND
+        self.assertEqual(self.model.hfsm_sub, "RESET_LAND")
+
+        self.model.px4_armed = False
         self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    def test_second_reset_forces_immediate_reset(self):
+        self.start_flight()
+        self.model.hfsm_events.append("RESET")
+        self.fsm.on_update()
+        self.model.hfsm_events.append("RESET")
+
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    def test_reset_when_not_armed_is_immediate(self):
+        self.make_connection()
+        self.fsm.on_update()
+        self.model.px4_armed = False
+        self.model.hfsm_events.append("RESET")
+
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    def test_reset_without_px4_target_is_immediate(self):
+        self.make_connection(target_system=0)
+        self.model.px4_armed = True
+        self.fsm.on_update()
+        self.model.hfsm_events.append("RESET")
+
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    def test_reset_during_mission_lands_then_resets(self):
+        conn = self.start_flight()
+        self.load_mission()
+        self.model.hfsm_events.append("MISSION_START")
+        self.fsm.on_update()
+        self.model.hfsm_events.append("RESET")
+
+        self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
+        self.assertEqual(conn.send.call_args[0][0].command, mavutil.mavlink.MAV_CMD_NAV_LAND)
+
+        self.model.px4_armed = False
+        self.assertEqual(self.fsm.on_update(), MainState.RESET)
+        self.assertFalse(self.model.mission_running)
 
     # --------------------------------------------------------
     # MISSION (im Flug / nach Start vom Boden)

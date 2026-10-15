@@ -75,6 +75,36 @@ class TestPX4ApplicationLand(unittest.TestCase):
         self.fly_and_land()
         self.fly_and_land()          # Takeoff-Service wurde zurückgesetzt
 
+    def reset_in_flight(self, model_name):
+        """TAKEOFF → RESET-Button → Landung (RESET_LAND) → Disarm → RESET → neues PX4 → READY."""
+        self.start_app(model_name)
+        self.pump_until(lambda: self.model.hfsm_main == "READY" and self.model.ready_to_arm,
+                        150, "READY")
+        old_pid = self.model.px4_pid
+
+        self.home.takeoff_button.invoke()
+        self.pump_until(lambda: self.model.hfsm_main == "AIRBORNE"
+                        and self.model.px4_armed and self.model.vehicle_alt > 5.0,
+                        60, "AIRBORNE > 5 m")
+
+        self.home.reset_button.invoke()
+        self.pump_until(lambda: self.model.hfsm_sub == "RESET_LAND"
+                        and self.model.px4_mode == "AUTO.LAND", 10, "RESET_LAND / AUTO.LAND")
+        self.assertEqual(self.model.px4_pid, old_pid)          # PX4 läuft während der Landung weiter
+
+        self.pump_until(lambda: self.model.px4_pid not in (None, old_pid)
+                        and self.model.hfsm_main == "READY", 240, "nach Landung RESET → READY")
+
+        qgcr_log = self.app.window.log_tab.qgcr_text.get("1.0", "end")
+        self.assertIn("[AirborneHFSM] gelandet und disarmed → RESET", qgcr_log)
+        self.assertIn("HFSM-Wechsel: AIRBORNE → RESET", qgcr_log)
+
+    def test_reset_in_flight_rocket_vtol(self):
+        self.reset_in_flight("gz_fsl_rocket_vtol")
+
+    def test_reset_in_flight_rc_cessna(self):
+        self.reset_in_flight("gz_rc_cessna")
+
     def test_rocket_vtol(self):
         self.check_two_flights("gz_fsl_rocket_vtol")
 
