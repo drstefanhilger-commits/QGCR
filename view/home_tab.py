@@ -129,6 +129,13 @@ class HomeTab(ttk.Frame):
         if self.controller:
             self.controller.request_model_change(self.model_var.get())
 
+    def set_buttons_enabled(self, enabled: bool):
+        """Buttons sperren (z. B. solange der FSL-Tab die Drohne steuert)."""
+        state = "normal" if enabled else "disabled"
+        for button in (self.arm_button, self.disarm_button, self.takeoff_button, self.land_button,
+                       self.mission_button, self.reset_button, self.clear_track_button):
+            button.configure(state=state)
+
     def set_model(self, model_name, enabled=True):
         """Aktuelles Modell anzeigen; Auswahl im Flug/RESET sperren."""
         if model_name and self.model_var.get() != model_name:

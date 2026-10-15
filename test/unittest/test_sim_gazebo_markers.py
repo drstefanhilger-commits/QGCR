@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_sim_gazebo_markers.py ===
 
+import math
 import os
 import tempfile
 import threading
@@ -67,6 +68,20 @@ class TestSimGazeboMarkers(unittest.TestCase):
         self.assertIn("0 0.8 0 1", start_req)              # grün
         self.assertIn("0.9 0 0 1", landing_req)            # rot
         self.assertNotIn("<collision", start_req)          # rein visuell
+
+    def test_trigger_path_and_wait_point(self):
+        east_10m = (ORIGIN[0], ORIGIN[1] + 10 / (111_320.0 * math.cos(math.radians(ORIGIN[0]))))
+        self.markers.request(None, None, path=((ORIGIN[0], ORIGIN[1], 20.0), (*east_10m, 20.0)),
+                             wait=(*NORTH_10M, 15.0))
+        self.settle(2)
+
+        self.assertEqual(self.gz.ops(), [("create", "qgcr_trigger_path"), ("create", "qgcr_wait")])
+        path_req, wait_req = self.gz.calls[0][2], self.gz.calls[1][2]
+        self.assertIn("<box><size>10.00 0.3 0.3</size>", path_req)     # 10 m lang
+        self.assertIn("<pose>5.00 0.00 20.00 0 -0.0000 0.0000</pose>", path_req)
+        self.assertIn("<sphere>", wait_req)
+        self.assertIn("<pose>0 0 15.00 0 0 0</pose>", wait_req)          # Kugel in Wartehöhe
+        self.assertIn("1 0.8 0 1", wait_req)                            # gelb
 
     def test_same_request_does_nothing(self):
         self.markers.request(ORIGIN, None)

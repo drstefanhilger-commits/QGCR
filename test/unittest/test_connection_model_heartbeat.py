@@ -41,6 +41,13 @@ class TestConnectionModelHeartbeat(unittest.TestCase):
         self.assertAlmostEqual(self.model.home_alt, 488.0)
         self.assertIn(("status", "Home set: 47.39774, 8.54559, 488.0 m"), self.model.gui_items())
 
+    def test_sys_status_updates_battery_and_is_dispatched(self):
+        st = make_msg("SYS_STATUS", battery_remaining=64)
+        run_connection(self.model, self.dispatcher, [st])
+
+        self.assertEqual(self.model.battery_remaining, 64)
+        self.dispatcher.dispatch.assert_called_once_with(st)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -223,6 +223,7 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 | `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE (TAKEOFF: `NAV_TAKEOFF` mit `param7` = Home-Höhe AMSL + 10 m, Position = aktuelle bzw. NaN; ohne bekannte Home-Höhe kein ARM). Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `MISSION_START` (HomeTab „MISSION“) → AUTO.MISSION im Flug (`hfsm_sub` MISSION). Läuft eine Mission (auch vom Boden gestartet), startet AIRBORNE keinen eigenen Takeoff; endet sie mit Landung (PX4 disarmt) → READY. `RESET` im Flug: erst landen (NAV_LAND, `hfsm_sub` RESET_LAND), nach Landung + Disarm → RESET; nicht armed / kein PX4-Ziel → sofort; zweiter RESET während der Landung → sofort. Verbindung verloren → RESET |
 | `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). `MISSION_START` (Button „Start“) → `MAV_CMD_MISSION_START` (PX4 armt + AUTO.MISSION, `hfsm_sub` START); sobald armed und AUTO.MISSION → AIRBORNE mit `model.mission_running`, sonst nach 10 s Statusmeldung. Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, Heartbeat-Status verwerfen (`model.reset_heartbeat()`), `reset_done=True` → STARTUP |
+| `INTERCEPT` | `InterceptHFSM` | Tab „FSL“ (kontrollierte FSL-Drohne, siehe unten). IDLE → `INTERCEPT_TRIGGER` → Wartepunkt planen → UPLOAD → START → FLIGHT → (Timeout / Akku / `INTERCEPT_ABORT` → RTL) → gelandet → IDLE. Neue Trigger außerhalb von IDLE werden verworfen. Tab verlassen → READY (im Flug erst nach der Landung). RESET im Flug: erst RTL + Landung |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
 
 ```
@@ -245,6 +246,29 @@ Die früheren Sub-FSMs samt `*_substate.py` / `*_state_map.py` liegen unter `Obs
 
 ---
 
+# 🎯 Kontrollierte FSL-Drohne (Tab „FSL“)
+
+Modell `gz_fsl_rocket_vtol` (Multicopter-Betrieb). Solange der Tab aktiv ist (HFSM `INTERCEPT`),
+sind die HomeTab-Buttons und die Modellauswahl gesperrt; mit anderem Modell bietet der Tab
+„Modell auf FSL umstellen“ an.
+
+- **Trigger (simuliert):** ID, Position Ost/Nord/Höhe [m] relativ zum FSL-Startpunkt,
+  Geschwindigkeit Ost/Nord/Vertikal [m/s]; Zeitstempel = Absenden. Geschwindigkeit kurzfristig konstant.
+- **Wartepunkt** (`model/intercept.py`): frühester Punkt auf der geschätzten Bahn, den die FSL erreicht,
+  während der Trigger noch mindestens 10 m davor ist. Keine Entfernungsgrenze (der 200-m-Kreis im
+  Plot dient nur der Orientierung). Höhe = Höhe der Trigger-Bahn dort, mindestens 10 m.
+  Zeitmodell der FSL (SITL gemessen): 3 s Vorbereitung + 16 s bis Horizontalflug + Strecke /
+  (8 m/s × 0,92) + 4 s Abbremsen.
+- **Mission:** Takeoff 10 m → `DO_CHANGE_SPEED` → Wartepunkt → ggf. `NAV_LOITER_TIME` → 10 s entlang der
+  Trigger-Bahn → `NAV_LAND` am Startpunkt. Start per `MAV_CMD_MISSION_START`.
+- **Überwachung:** Timeout (Default 180 s ab Start) oder Akku < Minimum (Default 30 %,
+  `SYS_STATUS.battery_remaining`) bzw. „Abbrechen“ → RTL (`MAV_CMD_NAV_RETURN_TO_LAUNCH`).
+- **Anzeige:** 2D-Plot mit 200-m-Kreis, Trigger-Bahn (lila) und Wartepunkt (gelbe Raute);
+  Gazebo: Start, Landung, Trigger-Bahn (lila Stab in Flughöhe) und Wartepunkt (gelbe Kugel).
+  Beispiel: `docs/fsl_tab_intercept.png`
+
+---
+
 # 🖥️ GUI-Architektur
 
 ```python
@@ -252,7 +276,7 @@ GUIController(model, state_machine=main_controller, main_window, queue_registry)
 MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry)
 ```
 
-- `MainWindow` (ttk.Frame): Notebook mit `HomeTab`, `MissionTab`, `LogTab` + `StatusBar`
+- `MainWindow` (ttk.Frame): Notebook mit `HomeTab`, `MissionTab`, `FslTab`, `LogTab` + `StatusBar`
 - HomeTab-2D-Plot (`view/plot_2d.py`): Draufsicht in Metern (Nord oben, Maßstab automatisch) mit
   Missions-Track (blau, aufgezeichnet solange `model.mission_running`, ab 1 m Abstand, max. 10 000 Punkte),
   geplanten Wegpunkten (grau gestrichelt), Startpunkt (grünes Dreieck = Position beim Missionsstart),

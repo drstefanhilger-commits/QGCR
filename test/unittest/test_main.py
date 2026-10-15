@@ -184,7 +184,7 @@ class TestMainApplicationInit(unittest.TestCase):
         m.hfsm_main = "READY"
         m.update_home_position(47.0, 8.0, 400.0)
         one_tick()
-        self.app.gz_markers.request.assert_called_once_with((47.0, 8.0), None)
+        self.app.gz_markers.request.assert_called_once_with((47.0, 8.0), None, path=None, wait=None)
 
     def test_shutdown_stops_gazebo_markers(self):
         self.app.gz_markers = MagicMock()

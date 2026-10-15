@@ -45,8 +45,8 @@ class MainController:
                     self._switch_to(MainState.AIRBORNE)
                 return
 
-            # RESET im Flug übernimmt die AirborneHFSM (erst landen, dann RESET)
-            if event == "RESET" and self.active_state != MainState.AIRBORNE:
+            # RESET im Flug übernimmt die HFSM selbst (erst landen, dann RESET)
+            if event == "RESET" and self.active_state not in (MainState.AIRBORNE, MainState.INTERCEPT):
                 self.model.hfsm_events.remove(event)
                 self._switch_to(MainState.RESET)
                 return

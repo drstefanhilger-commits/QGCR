@@ -86,6 +86,20 @@ class TestControllerMainController(unittest.TestCase):
         self.assertIs(self.ctrl.active_fsm, hfsm)        # nicht neu erzeugt
         self.assertNotIn("TAKEOFF_DONE", self.model.hfsm_events)
 
+    def test_reset_in_intercept_goes_to_intercept_hfsm(self, _starter):
+        self.ctrl.on_update()                            # → READY
+        self.model.active_tab = "FSL"
+        self.ctrl.on_update()                            # → INTERCEPT
+        self.assertEqual(self.ctrl.active_state, MainState.INTERCEPT)
+        self.ctrl.on_update()                            # enter
+        self.model.px4_armed = True
+        self.model.connection = MagicMock()
+        self.model.connection.master.target_system = 1
+
+        self.model.hfsm_events.append("RESET")
+        self.ctrl.on_update()
+        self.assertEqual(self.ctrl.active_state, MainState.INTERCEPT)   # erst RTL + Landung
+
     def test_stale_events_dropped_on_switch_to_ready(self, _starter):
         self.model.hfsm_events.append("TAKEOFF_ALT")     # Rest aus dem Vorzyklus
         self.ctrl.on_update()                            # STARTUP → READY

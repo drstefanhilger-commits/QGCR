@@ -265,5 +265,71 @@ class TestControllerGUIControllerModel(unittest.TestCase):
         window.home_tab.set_model.assert_called_with("gz_rc_cessna", enabled=False)
 
 
+@patch("builtins.print")
+class TestControllerGUIControllerFsl(unittest.TestCase):
+
+    VALUES = {"drone_id": "T7", "east": "-150", "north": "100", "up": "20", "v_east": "5",
+              "v_north": "0", "v_up": "0", "speed": "8", "timeout": "120", "battery_min": "25"}
+
+    def setUp(self):
+        self.model = DummyModel()
+        self.model.hfsm_main, self.model.hfsm_sub = "INTERCEPT", "IDLE"
+        self.model.vehicle_configs = [PX4InstanceConfig("/opt/px4", "gz_fsl_rocket_vtol", 1, verbose=False)]
+        self.gui = GUIController(self.model, None, None, self.model.queue_registry)
+
+    def test_send_trigger(self, _print):
+        self.assertTrue(self.gui.send_trigger(dict(self.VALUES)))
+        t, cfg = self.model.intercept_trigger, self.model.intercept_config
+        self.assertEqual((t.drone_id, t.east, t.v_east), ("T7", -150.0, 5.0))
+        self.assertEqual((cfg.speed, cfg.timeout, cfg.battery_min), (8.0, 120.0, 25.0))
+        self.assertEqual(list(self.model.hfsm_events), ["INTERCEPT_TRIGGER"])
+
+    def test_send_trigger_invalid_input(self, _print):
+        values = dict(self.VALUES, north="abc")
+        self.assertFalse(self.gui.send_trigger(values))
+        self.assertTrue(self.model.intercept_status.startswith("Eingabe ungültig"))
+        self.assertEqual(len(self.model.hfsm_events), 0)
+
+    def test_send_trigger_only_in_intercept(self, _print):
+        self.model.hfsm_main = "READY"
+        self.assertFalse(self.gui.send_trigger(dict(self.VALUES)))
+
+    def test_abort(self, _print):
+        self.gui.abort_intercept()
+        self.assertEqual(list(self.model.hfsm_events), ["INTERCEPT_ABORT"])
+
+    def test_switch_to_fsl_model(self, _print):
+        self.assertFalse(self.gui.switch_to_fsl_model())                  # schon FSL
+        self.model.vehicle_configs[0].model_name = "gz_rc_cessna"
+        self.assertTrue(self.gui.switch_to_fsl_model())
+        self.assertEqual(self.gui.get_selected_model(), "gz_fsl_rocket_vtol")
+        self.assertEqual(list(self.model.hfsm_events), ["RESET"])
+
+    def test_model_change_blocked_in_intercept(self, _print):
+        self.assertFalse(self.gui.can_change_model())
+
+    def test_update_fsl_tab_disables_home_buttons(self, _print):
+        window = MagicMock()
+        self.gui.main_window = window
+        self.gui.update_fsl_tab()
+        window.home_tab.set_buttons_enabled.assert_called_once_with(False)
+        window.fsl_tab.set_enabled.assert_called_once_with(trigger=True, abort=False, model_hint=False)
+
+        window.reset_mock()
+        self.model.hfsm_main = "READY"
+        self.gui.update_fsl_tab()
+        window.home_tab.set_buttons_enabled.assert_called_once_with(True)
+
+    def test_plot_data_with_intercept_geometry(self, _print):
+        from QGCR.model.intercept import InterceptConfig, Trigger, plan_intercept
+        self.model.intercept_origin = (47.397971, 8.546164)
+        self.model.intercept_plan = plan_intercept(Trigger("T", 0, -150, 100, 20, 5, 0, 0), 0, InterceptConfig())
+
+        data = self.gui.get_plot_data()
+        self.assertEqual(data["circle"], ((47.397971, 8.546164), 200.0))
+        self.assertEqual(len(data["trigger_path"]), 2)
+        self.assertEqual(len(data["wait"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

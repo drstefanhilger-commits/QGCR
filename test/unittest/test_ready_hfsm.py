@@ -53,6 +53,11 @@ class TestReadyHFSM(unittest.TestCase):
         self.model.active_tab = "Mission"
         self.assertEqual(self.fsm.on_update(), MainState.MISSION)
 
+    def test_fsl_tab_goes_intercept(self):
+        self.fsm.on_update()
+        self.model.active_tab = "FSL"
+        self.assertEqual(self.fsm.on_update(), MainState.INTERCEPT)
+
     def test_log_tab_stays_ready(self):
         self.fsm.on_update()
         self.model.active_tab = "Log"

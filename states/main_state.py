@@ -10,3 +10,4 @@ class MainState(Enum):
     AIRBORNE = auto()
     RESET = auto()
     LOST = auto()
+    INTERCEPT = auto()

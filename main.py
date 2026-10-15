@@ -166,7 +166,12 @@ class Application:
         if self.model.hfsm_main == "STARTUP":
             self.gz_markers.invalidate()
             return
-        self.gz_markers.request(*self.model.mission_markers())
+        geometry = self.model.intercept_geometry()
+        path = wait = None
+        if geometry:
+            path = geometry["trigger_path"][:2] if len(geometry["trigger_path"]) >= 2 else None
+            wait = geometry["wait"]
+        self.gz_markers.request(*self.model.mission_markers(), path=path, wait=wait)
 
     def _connect_loop(self):
         try:

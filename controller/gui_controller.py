@@ -1,7 +1,9 @@
 # === PFAD-B FULL FILE: QGCR/controller/gui_controller.py ===
 
 import os
+import time
 
+from QGCR.model.intercept import InterceptConfig, Trigger
 from QGCR.model.mission_parser import load_qgc_plan
 from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
 
@@ -36,6 +38,8 @@ class GUIController:
         "MISSION_STOP",
         "RESET",            # <--- NEU
         "STOP",             # <--- optional, falls du STOP global willst
+        "INTERCEPT_TRIGGER",
+        "INTERCEPT_ABORT",
     }
 
     def __init__(self, model, state_machine, main_window, queue_registry):
@@ -142,7 +146,7 @@ class GUIController:
     # Modellauswahl (HomeTab)
     # ------------------------------------------------------------
     # Im Flug / während eines laufenden RESET kein Modellwechsel
-    MODEL_CHANGE_BLOCKED = ("AIRBORNE", "RESET")
+    MODEL_CHANGE_BLOCKED = ("AIRBORNE", "RESET", "INTERCEPT")
 
     def get_model_choices(self):
         return list(self.model.allowed_models)
@@ -180,6 +184,97 @@ class GUIController:
         self.handle_button_event("RESET")
         return True
 
+    # ------------------------------------------------------------
+    # FSL-Tab (kontrollierte FSL-Drohne)
+    # ------------------------------------------------------------
+    FSL_MODEL = "gz_fsl_rocket_vtol"
+
+    def send_trigger(self, values):
+        """Werte aus dem FSL-Tab → Trigger + Parameter ins Model, Event an InterceptHFSM."""
+        if self.model.hfsm_main != "INTERCEPT":
+            self.model.intercept_status = "Trigger nur im FSL-Tab (INTERCEPT) möglich"
+            return False
+        try:
+            trigger = Trigger(
+                drone_id=values.get("drone_id") or "T?",
+                timestamp=time.time(),
+                east=float(values["east"]), north=float(values["north"]), up=float(values["up"]),
+                v_east=float(values["v_east"]), v_north=float(values["v_north"]),
+                v_up=float(values.get("v_up") or 0.0),
+            )
+            config = InterceptConfig(
+                speed=float(values["speed"]), timeout=float(values["timeout"]),
+                battery_min=float(values["battery_min"]),
+            )
+        except (KeyError, ValueError) as e:
+            self.model.intercept_status = f"Eingabe ungültig: {e}"
+            return False
+
+        if config.speed <= 0 or config.timeout <= 0:
+            self.model.intercept_status = "Eingabe ungültig: Geschwindigkeit und Timeout müssen > 0 sein"
+            return False
+
+        self.model.intercept_config = config
+        self.model.intercept_trigger = trigger
+        self.handle_button_event("INTERCEPT_TRIGGER")
+        return True
+
+    def abort_intercept(self):
+        self.handle_button_event("INTERCEPT_ABORT")
+
+    def switch_to_fsl_model(self):
+        """Aus dem FSL-Tab (am Boden): Modell auf FSL umstellen (RESET + Neustart)."""
+        if self.get_selected_model() == self.FSL_MODEL:
+            return False
+        if not (self.model.hfsm_main == "INTERCEPT" and self.model.hfsm_sub == "IDLE"):
+            return False
+        old = self.model.vehicle_configs[0]
+        self.model.vehicle_configs = [
+            PX4InstanceConfig(old.px4_dir, self.FSL_MODEL, old.instance_id, old.verbose)
+        ]
+        self.model.log.qgcr(f"[GUIController] FSL-Tab: Modellwechsel → {self.FSL_MODEL} (RESET)")
+        self.handle_button_event("RESET")
+        return True
+
+    def update_fsl_tab(self):
+        tab = getattr(self.main_window, "fsl_tab", None) if self.main_window else None
+        m = self.model
+        in_intercept = m.hfsm_main == "INTERCEPT"
+        sub = m.hfsm_sub if in_intercept else "-"
+        fsl = self.get_selected_model() in (None, self.FSL_MODEL)
+
+        # HomeTab-Buttons und Modellwahl sind im FSL-Einsatz inaktiv
+        home = getattr(self.main_window, "home_tab", None) if self.main_window else None
+        if home is not None and hasattr(home, "set_buttons_enabled"):
+            home.set_buttons_enabled(not in_intercept)
+
+        if tab is None:
+            return
+
+        tab.set_enabled(trigger=in_intercept and sub == "IDLE" and fsl,
+                        abort=in_intercept and sub in ("UPLOAD", "START", "FLIGHT"),
+                        model_hint=in_intercept and sub == "IDLE" and not fsl)
+
+        plan = m.intercept_plan
+        if plan is None:
+            plan_text = "Plan: -"
+        elif plan.reachable:
+            e, n, u = plan.wait
+            plan_text = (f"Wartepunkt: Ost {e:.0f} m, Nord {n:.0f} m, Höhe {u:.0f} m\n"
+                         f"FSL dort nach {plan.t_fsl:.0f} s, Trigger nach {plan.t_trigger:.0f} s, "
+                         f"Warten {plan.hold:.0f} s, Kurs {plan.heading_deg:.0f}°")
+        else:
+            plan_text = f"Plan: {plan.reason}"
+
+        battery = f"{m.battery_remaining:.0f} %" if m.battery_remaining is not None else "-"
+        flight = f"Akku: {battery}   Höhe: {m.vehicle_alt:.1f} m   Modus: {m.px4_mode}"
+        model_hint = "" if fsl else f"\nModell {self.FSL_MODEL} erforderlich"
+        tab.show_status(f"{m.hfsm_main}/{sub}", f"{m.intercept_status}{model_hint}", plan_text, flight)
+
+        data = self.get_plot_data()
+        tab.plot.draw(data)
+        tab.alt_plot.draw(self.get_alt_plot_data())
+
     def update_model_selector(self):
         """Auswahlliste im HomeTab aktualisieren (aus gui_tick)."""
         home = getattr(self.main_window, "home_tab", None) if self.main_window else None
@@ -198,7 +293,17 @@ class GUIController:
         waypoints = [(wp["x"], wp["y"]) for wp in list(m.mission.items)
                      if wp["command"] in (16, 21, 22, 31, 85) and (wp["x"] or wp["y"])]
 
+        geometry = m.intercept_geometry()
+        extras = {}
+        if geometry:
+            extras = {
+                "circle": geometry["circle"],
+                "trigger_path": [p[:2] for p in geometry["trigger_path"]],
+                "wait": geometry["wait"][:2] if geometry["wait"] else None,
+            }
+
         return {
+            **extras,
             "track": list(m.mission_track),        # Kopie (Update-Thread hängt an)
             "waypoints": waypoints if m.mission.ready else [],
             "start": start,
@@ -396,9 +501,10 @@ class GUIController:
         # MissionTab (Buttons, Mission, Status)
         self.update_mission_tab()
 
-        # HomeTab (Modellauswahl, 2D-Plot)
+        # HomeTab (Modellauswahl, 2D-Plot), FSL-Tab
         self.update_model_selector()
         self.update_plot()
+        self.update_fsl_tab()
 
         if self.root:
             self.root.after(500, self.gui_tick)

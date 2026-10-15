@@ -8,6 +8,7 @@ from QGCR.view.status_bar import StatusBar
 from QGCR.view.home_tab import HomeTab
 from QGCR.view.mission_tab import MissionTab
 from QGCR.view.log_tab import LogTab
+from QGCR.view.fsl_tab import FslTab
 
 
 class MainWindow(ttk.Frame):
@@ -38,10 +39,12 @@ class MainWindow(ttk.Frame):
         self.home_tab = HomeTab(self.notebook, controller=self.controller)
         self.mission_tab = MissionTab(self.notebook, controller=self.controller)
         self.log_tab = LogTab(self.notebook)
+        self.fsl_tab = FslTab(self.notebook, controller=self.controller)
 
         # Tabs hinzufügen
         self.notebook.add(self.home_tab, text="Home")
         self.notebook.add(self.mission_tab, text="Mission")
+        self.notebook.add(self.fsl_tab, text="FSL")
         self.notebook.add(self.log_tab, text="Log")
 
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)

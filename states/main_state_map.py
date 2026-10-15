@@ -9,6 +9,7 @@ from QGCR.states.mission.mission_hfsm import MissionHFSM
 from QGCR.states.airborne.airborne_hfsm import AirborneHFSM
 from QGCR.states.reset.reset_hfsm import ResetHFSM
 from QGCR.states.lost.lost_hfsm import LostHFSM
+from QGCR.states.intercept.intercept_hfsm import InterceptHFSM
 
 
 MAIN_STATE_MAP = {
@@ -18,4 +19,5 @@ MAIN_STATE_MAP = {
     MainState.AIRBORNE: AirborneHFSM,
     MainState.RESET: ResetHFSM,
     MainState.LOST: LostHFSM,
+    MainState.INTERCEPT: InterceptHFSM,
 }

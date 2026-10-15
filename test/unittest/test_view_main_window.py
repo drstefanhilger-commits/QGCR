@@ -36,7 +36,7 @@ class TestViewMainWindow(unittest.TestCase):
 
     def test_tabs_present(self):
         texts = [self.gui.notebook.tab(t, "text") for t in self.gui.notebook.tabs()]
-        self.assertEqual(texts, ["Home", "Mission", "Log"])
+        self.assertEqual(texts, ["Home", "Mission", "FSL", "Log"])
 
     def test_switch_to_mission(self):
         self.assertIs(self.select_tab("Mission"), self.gui.mission_tab)

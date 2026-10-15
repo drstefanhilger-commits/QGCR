@@ -47,9 +47,12 @@ class ReadyHFSM(BaseHFSM):
                 case "DISARM":
                     self._send_arm_disarm(arm=False)
 
-        # Mission-Tab aktiv → MISSION (zustandsbasiert, kein Event geht verloren)
+        # Mission-Tab aktiv → MISSION, FSL-Tab aktiv → INTERCEPT (zustandsbasiert)
         if self.model.active_tab == "Mission":
             self._next_state = MainState.MISSION
+            return
+        if self.model.active_tab == "FSL":
+            self._next_state = MainState.INTERCEPT
             return
 
         # Grace-Phase nach Startup/Reset

@@ -183,6 +183,11 @@ def cmd_mission_start(target_system: int = 1, target_component: int = 1, first_i
     )
 
 
+def cmd_rtl(target_system: int = 1, target_component: int = 1):
+    """MAV_CMD_NAV_RETURN_TO_LAUNCH (20): zurück zum Home/Start und landen."""
+    return _cmd_long(mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH, target_system, target_component)
+
+
 def is_ack_success(msg) -> bool:
     """
     Prüft, ob ein COMMAND_ACK erfolgreich war.

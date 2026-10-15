@@ -121,6 +121,10 @@ class Connection:
             self.model.on_command_ack(msg)
             self.dispatcher.dispatch(msg)
 
+        elif msg_type == "SYS_STATUS":
+            self.model.update_battery(getattr(msg, "battery_remaining", -1))
+            self.dispatcher.dispatch(msg)
+
         elif msg_type == "HOME_POSITION":
             self.model.update_home_position(
                 msg.latitude / 1e7,

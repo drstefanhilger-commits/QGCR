@@ -20,8 +20,10 @@ class GazeboMarkers:
       (<spherical_coordinates> der World-SDF).
     """
 
-    NAMES = {"start": "qgcr_start", "landing": "qgcr_landing"}
-    COLORS = {"start": "0 0.8 0 1", "landing": "0.9 0 0 1"}
+    NAMES = {"start": "qgcr_start", "landing": "qgcr_landing",
+             "path": "qgcr_trigger_path", "wait": "qgcr_wait"}
+    COLORS = {"start": "0 0.8 0 1", "landing": "0.9 0 0 1",
+              "path": "0.6 0 0.8 1", "wait": "1 0.8 0 1"}
     DEFAULT_ORIGIN = (47.397971057728974, 8.546163739800146)   # PX4 Welt "default"
     EARTH_M_PER_DEG = 111_320.0
     RETRY_INTERVAL = 2.0
@@ -45,8 +47,14 @@ class GazeboMarkers:
     # ------------------------------------------------------------
     # Öffentliche API
     # ------------------------------------------------------------
-    def request(self, start, landing):
-        desired = {"start": start, "landing": landing}
+    def request(self, start, landing, path=None, wait=None):
+        """
+        start/landing: (lat, lon) – Scheibe + Mast am Boden.
+        path: ((lat, lon, alt), (lat, lon, alt)) – Flugbahn der Trigger-Drohne (Stab).
+        wait: (lat, lon, alt) – Wartepunkt (Kugel in Höhe + Mast).
+        """
+        desired = {"start": start, "landing": landing,
+                   "path": tuple(path) if path else None, "wait": wait}
         with self._cond:
             if desired == self._desired and not self._needs_retry():
                 return
@@ -131,9 +139,14 @@ class GazeboMarkers:
     # gz-Aufrufe
     # ------------------------------------------------------------
     def _sdf(self, name, key, point):
-        x, y = self.to_enu(point)
         color = self.COLORS[key]
         material = f"<material><ambient>{color}</ambient><diffuse>{color}</diffuse></material>"
+        if key == "path":
+            return self._sdf_path(name, point, material)
+        if key == "wait":
+            return self._sdf_wait(name, point, material)
+
+        x, y = self.to_enu(point[:2])
         return (
             f"<sdf version='1.9'><model name='{name}'><static>true</static>"
             f"<pose>{x:.2f} {y:.2f} 0 0 0 0</pose><link name='link'>"
@@ -141,6 +154,35 @@ class GazeboMarkers:
             f"<radius>1.5</radius><length>0.05</length></cylinder></geometry>{material}</visual>"
             f"<visual name='pole'><pose>0 0 2 0 0 0</pose><geometry><cylinder>"
             f"<radius>0.08</radius><length>4</length></cylinder></geometry>{material}</visual>"
+            f"</link></model></sdf>"
+        )
+
+    def _sdf_path(self, name, ends, material):
+        """Stab von ends[0] nach ends[1] (je (lat, lon, alt)) in Flughöhe."""
+        (x0, y0), (x1, y1) = self.to_enu(ends[0][:2]), self.to_enu(ends[1][:2])
+        z0, z1 = ends[0][2], ends[1][2]
+        dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
+        length = max(math.sqrt(dx * dx + dy * dy + dz * dz), 0.1)
+        yaw = math.atan2(dy, dx)
+        pitch = -math.atan2(dz, math.hypot(dx, dy))
+        return (
+            f"<sdf version='1.9'><model name='{name}'><static>true</static>"
+            f"<pose>{(x0 + x1) / 2:.2f} {(y0 + y1) / 2:.2f} {(z0 + z1) / 2:.2f} 0 {pitch:.4f} {yaw:.4f}</pose>"
+            f"<link name='link'><visual name='path'><geometry><box><size>{length:.2f} 0.3 0.3</size></box>"
+            f"</geometry>{material}</visual></link></model></sdf>"
+        )
+
+    def _sdf_wait(self, name, point, material):
+        """Kugel in Wartehöhe + dünner Mast zum Boden."""
+        x, y = self.to_enu(point[:2])
+        z = point[2]
+        return (
+            f"<sdf version='1.9'><model name='{name}'><static>true</static>"
+            f"<pose>{x:.2f} {y:.2f} 0 0 0 0</pose><link name='link'>"
+            f"<visual name='ball'><pose>0 0 {z:.2f} 0 0 0</pose><geometry><sphere><radius>1.2</radius>"
+            f"</sphere></geometry>{material}</visual>"
+            f"<visual name='pole'><pose>0 0 {z / 2:.2f} 0 0 0</pose><geometry><cylinder>"
+            f"<radius>0.05</radius><length>{max(z, 0.1):.2f}</length></cylinder></geometry>{material}</visual>"
             f"</link></model></sdf>"
         )
 

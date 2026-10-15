@@ -66,6 +66,21 @@ class TestViewPlot2D(unittest.TestCase):
         lx, ly = self.centre("landing")
         self.assertAlmostEqual(sy - vy, lx - sx, delta=6)   # je 100 m
 
+    def test_draws_circle_trigger_path_and_wait(self):
+        self.plot.draw(self.data(start=START, circle=(START, 200.0),
+                                 trigger_path=[NORTH_100M, EAST_100M], wait=EAST_100M))
+        for tag in ("circle", "trigger_path", "wait"):
+            with self.subTest(tag=tag):
+                self.assertTrue(self.tagged(tag))
+
+    def test_circle_fits_and_is_round(self):
+        self.plot.draw(self.data(start=START, circle=(START, 200.0)))
+        oval = [i for i in self.tagged("circle") if self.plot.type(i) == "oval"][0]
+        x0, y0, x1, y1 = self.plot.coords(oval)
+        self.assertAlmostEqual(x1 - x0, y1 - y0, delta=1)
+        self.assertGreaterEqual(min(x0, y0), 0)
+        self.assertLessEqual(x1, max(self.plot.winfo_width(), 400))   # Plot rechnet mit min. 400 px
+
     def test_no_redraw_for_same_data(self):
         d = self.data(track=[START, NORTH_100M], start=START)
         self.plot.draw(d)

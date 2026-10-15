@@ -347,3 +347,30 @@ def test_clear_track_clears_both():
     m.clear_track()
     assert m.mission_track == [] and m.mission_alt_track == []
     assert m.mission_running                         # Mission läuft weiter
+
+
+# ------------------------------------------------------------
+# Akku + FSL-Geometrie
+# ------------------------------------------------------------
+def test_update_battery():
+    m = Model(QueueRegistry())
+    assert m.battery_remaining is None
+    m.update_battery(73)
+    assert m.battery_remaining == 73
+    m.update_battery(-1)                               # MAVLink: unbekannt
+    assert m.battery_remaining is None
+
+
+def test_intercept_geometry():
+    from QGCR.model.intercept import InterceptConfig, Trigger, plan_intercept
+    m = Model(QueueRegistry())
+    assert m.intercept_geometry() is None
+
+    m.intercept_origin = (47.0, 8.0)
+    m.intercept_plan = plan_intercept(Trigger("T", 0, -150, 100, 20, 5, 0, 0), 0, InterceptConfig())
+    g = m.intercept_geometry()
+    assert g["circle"] == ((47.0, 8.0), 200.0)
+    assert len(g["trigger_path"]) == 2 and len(g["trigger_path"][0]) == 3
+    lat, lon, alt = g["wait"]
+    assert alt == 20.0
+    assert abs((lat - 47.0) * 111_320.0 - 100.0) < 0.5    # 100 m nördlich

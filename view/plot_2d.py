@@ -15,6 +15,8 @@ class Plot2D(tk.Canvas):
         "track": [(lat, lon), ...], "waypoints": [(lat, lon), ...],
         "start": (lat, lon) | None, "landing": (lat, lon) | None,
         "vehicle": (lat, lon) | None,
+        optional (FSL-Tab): "circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon), ...],
+        "wait": (lat, lon) | None
     }
     """
 
@@ -47,7 +49,9 @@ class Plot2D(tk.Canvas):
         for key in ("start", "landing", "vehicle"):
             if data.get(key):
                 return data[key]
-        for key in ("track", "waypoints"):
+        if data.get("circle"):
+            return data["circle"][0]
+        for key in ("track", "waypoints", "trigger_path"):
             if data.get(key):
                 return data[key][0]
         return None
@@ -81,11 +85,18 @@ class Plot2D(tk.Canvas):
         h = max(self.winfo_height(), 300)
 
         # Alle Punkte in Metern
-        layers = {key: [self._to_metres(origin, p) for p in data.get(key) or []]
-                  for key in ("track", "waypoints")}
-        singles = {key: self._to_metres(origin, data[key])
-                   for key in ("start", "landing", "vehicle") if data.get(key)}
-        points = layers["track"] + layers["waypoints"] + list(singles.values())
+        layers = {key: [self._to_metres(origin, p[:2]) for p in data.get(key) or []]
+                  for key in ("track", "waypoints", "trigger_path")}
+        singles = {key: self._to_metres(origin, data[key][:2])
+                   for key in ("start", "landing", "vehicle", "wait") if data.get(key)}
+        points = layers["track"] + layers["waypoints"] + layers["trigger_path"] + list(singles.values())
+
+        circle = None
+        if data.get("circle"):
+            (c_lat, c_lon), radius = data["circle"]
+            cx_m, cy_m = self._to_metres(origin, (c_lat, c_lon))
+            circle = (cx_m, cy_m, radius)
+            points += [(cx_m - radius, cy_m - radius), (cx_m + radius, cy_m + radius)]
 
         xs = [p[0] for p in points]
         ys = [p[1] for p in points]
@@ -97,6 +108,19 @@ class Plot2D(tk.Canvas):
 
         def px(p):
             return (w / 2 + (p[0] - cx) * scale, h / 2 - (p[1] - cy) * scale)
+
+        # 200-m-Kreis um den Startpunkt (Orientierung)
+        if circle:
+            x0, y0 = px((circle[0] - circle[2], circle[1] + circle[2]))
+            x1, y1 = px((circle[0] + circle[2], circle[1] - circle[2]))
+            self.create_oval(x0, y0, x1, y1, outline="#7a9a7a", dash=(6, 4), tags=("circle",))
+            self.create_text(x1 - 4, (y0 + y1) / 2, text=f"{circle[2]:.0f} m", anchor="e",
+                             fill="#7a9a7a", tags=("circle",))
+
+        # Bahn der Trigger-Drohne (Projektion)
+        if len(layers["trigger_path"]) >= 2:
+            self.create_line(*[c for p in layers["trigger_path"] for c in px(p)], fill="purple",
+                             width=2, arrow="last", tags=("trigger_path",))
 
         # Wegpunkte (geplant)
         if len(layers["waypoints"]) >= 2:
@@ -125,6 +149,13 @@ class Plot2D(tk.Canvas):
             self.create_line(x - 6, y - 6, x + 6, y + 6, fill="red", width=2, tags=("landing",))
             self.create_line(x - 6, y + 6, x + 6, y - 6, fill="red", width=2, tags=("landing",))
             self.create_text(x, y - 16, text="Landung", fill="red", tags=("landing",))
+
+        # Wartepunkt: gelbe Raute
+        if "wait" in singles:
+            x, y = px(singles["wait"])
+            self.create_polygon(x, y - 9, x + 9, y, x, y + 9, x - 9, y,
+                                fill="gold", outline="darkorange", tags=("wait",))
+            self.create_text(x, y - 17, text="Wartepunkt", fill="darkorange", tags=("wait",))
 
         # Aktuelle Position
         if "vehicle" in singles:

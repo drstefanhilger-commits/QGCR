@@ -155,6 +155,16 @@ class Model:
         self.mission_track = []
         # Position beim Missionsstart (Home kann PX4 später, z. B. nach der Landung, neu setzen)
         self.mission_start_point = None
+        # Akku in % (SYS_STATUS.battery_remaining; None = unbekannt)
+        self.battery_remaining = None
+
+        # Kontrollierte FSL-Drohne (Tab "FSL", HFSM INTERCEPT)
+        self.intercept_trigger = None      # model.intercept.Trigger
+        self.intercept_plan = None         # model.intercept.InterceptPlan
+        self.intercept_origin = None       # (lat, lon) des Startpunkts der Berechnung
+        self.intercept_config = None       # model.intercept.InterceptConfig (vom Tab)
+        self.intercept_status = "-"
+
         # Höhenverlauf während einer Mission: [(Sekunden seit Start, Höhe über Home), ...]
         self.mission_alt_track = []
         self.mission_t0 = None
@@ -237,6 +247,10 @@ class Model:
         except Exception:
             pass
 
+    def update_battery(self, remaining):
+        """SYS_STATUS.battery_remaining (−1 = unbekannt)."""
+        self.battery_remaining = remaining if remaining is not None and remaining >= 0 else None
+
     def reset_heartbeat(self):
         """
         Heartbeat-Status verwerfen (RESET / Modellwechsel):
@@ -305,6 +319,30 @@ class Model:
             start = (self.home_lat, self.home_lon)
         landing = self.landing_point() if self.mission.ready else None
         return start, landing
+
+    INTERCEPT_CIRCLE_M = 200.0      # Anzeige: Kreis um den Startpunkt (keine Beschränkung)
+
+    def intercept_geometry(self):
+        """
+        Anzeige-Geometrie der FSL-Planung in lat/lon (Plot + Gazebo) oder None:
+        {"circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon, alt), ...],
+         "wait": (lat, lon, alt) | None}
+        """
+        from QGCR.model.intercept import enu_to_latlon
+
+        plan, origin = self.intercept_plan, self.intercept_origin
+        if plan is None or origin is None:
+            return None
+
+        def geo(p):
+            lat, lon = enu_to_latlon(origin, p[0], p[1])
+            return (lat, lon, p[2])
+
+        return {
+            "circle": (origin, self.INTERCEPT_CIRCLE_M),
+            "trigger_path": [geo(p) for p in plan.path],
+            "wait": geo(plan.wait) if plan.wait else None,
+        }
 
     def landing_point(self):
         """(lat, lon) der Landung aus der Mission (NAV_LAND / NAV_VTOL_LAND) oder None."""
