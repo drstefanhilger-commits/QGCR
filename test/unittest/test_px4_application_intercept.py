@@ -13,7 +13,9 @@ from pymavlink import mavutil
 
 from QGCR.main import Application
 from QGCR.model.intercept import enu_to_latlon
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose, assert_no_foreign_session
+from QGCR.test.unittest.sitl_helper import (
+    PX4Sitl, requires_sitl, gz_model_pose, assert_no_foreign_session, persisted_px4_param,
+)
 
 
 @requires_sitl
@@ -69,6 +71,8 @@ class TestPX4ApplicationIntercept(unittest.TestCase):
 
     def test_trigger_to_landing(self):
         m = self.model
+        self.assertIn(persisted_px4_param("SIM_BAT_MIN_PCT"), (None, 50.0),
+                      "SIM_BAT_MIN_PCT verstellt – Akku-RTL würde den Einsatz verfälschen")
         self.pump_until(lambda: m.hfsm_main == "READY" and m.ready_to_arm
                         and getattr(m, "mission_ms", None) is not None, 150, "READY")
 
@@ -119,6 +123,14 @@ class TestPX4ApplicationIntercept(unittest.TestCase):
             return math.hypot((p[0] - q[0]) * 111_320.0,
                               (p[1] - q[1]) * 111_320.0 * math.cos(math.radians(p[0])))
         self.assertLess(min(dist_m(p, wait_ll) for p in m.mission_track), 5.0)
+
+        # nach dem Wartepunkt dem Trigger entgegen: Trigger fliegt nach Osten → FSL nach Westen
+        def east_m(p):
+            return (p[1] - m.intercept_origin[1]) * 111_320.0 * math.cos(math.radians(m.intercept_origin[0]))
+        def north_m(p):
+            return (p[0] - m.intercept_origin[0]) * 111_320.0
+        self.assertTrue(any(east_m(p) < plan.wait[0] - 30.0 and abs(north_m(p) - plan.wait[1]) < 10.0
+                            for p in m.mission_track), "FSL ist nicht dem Trigger entgegen geflogen")
         self.assertLess(dist_m(m.mission_track[-1], m.intercept_origin), 3.0)
 
     # ------------------------------------------------------------
@@ -158,6 +170,9 @@ class TestPX4ApplicationIntercept(unittest.TestCase):
         self.pump_until(lambda: m.hfsm_main == "READY" and m.ready_to_arm
                         and getattr(m, "mission_ms", None) is not None, 150, "READY")
 
+        # Vorbedingung: normaler Default (ein früherer Abbruch kann 10 % hinterlassen haben)
+        self.assertIn(persisted_px4_param("SIM_BAT_MIN_PCT"), (None, 50.0))
+
         # PX4 speichert Parameter in SITL dauerhaft → in jedem Fall zurücksetzen
         self.assertTrue(self.set_px4_param("SIM_BAT_MIN_PCT", 10.0), "SIM_BAT_MIN_PCT nicht gesetzt")
         try:
@@ -180,6 +195,13 @@ class TestPX4ApplicationIntercept(unittest.TestCase):
             self.assertLess(dist, 3.0, "nicht am Start gelandet")
         finally:
             self.assertTrue(self.set_px4_param("SIM_BAT_MIN_PCT", 50.0), "SIM_BAT_MIN_PCT nicht zurückgesetzt")
+            # PX4 speichert verzögert: erst beenden, wenn der Default auch gespeichert ist
+            deadline = time.time() + 15.0
+            while persisted_px4_param("SIM_BAT_MIN_PCT") not in (None, 50.0) and time.time() < deadline:
+                self.app.root.update()
+                time.sleep(0.2)
+            self.assertIn(persisted_px4_param("SIM_BAT_MIN_PCT"), (None, 50.0),
+                          "SIM_BAT_MIN_PCT ist noch gespeichert – PX4-Konsole: param set SIM_BAT_MIN_PCT 50")
 
 
 if __name__ == "__main__":

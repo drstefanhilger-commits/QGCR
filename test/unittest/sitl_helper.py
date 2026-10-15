@@ -131,3 +131,36 @@ def gz_model_pose(name):
             values = lines[i + 1].strip().strip("[]").split()
             return float(values[0]), float(values[1])
     return None
+
+
+def persisted_px4_param(name, px4_dir=None):
+    """
+    Wert eines Parameters in der gespeicherten SITL-Parameterdatei (rootfs/parameters.bson).
+    None = nicht gespeichert (PX4-Default gilt). PX4 speichert Änderungen verzögert.
+    """
+    import struct
+    px4_dir = os.path.expanduser(px4_dir or os.environ.get("PX4_DIR", "~/PX4-Autopilot"))
+    path = os.path.join(px4_dir, "build", "px4_sitl_default", "rootfs", "parameters.bson")
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        return None
+    i = 4
+    while i < len(data) - 1:
+        kind = data[i]
+        i += 1
+        end = data.index(b"\0", i)
+        key = data[i:end].decode()
+        i = end + 1
+        if kind == 0x01:                              # double
+            value = struct.unpack("<d", data[i:i + 8])[0]
+            i += 8
+        elif kind == 0x10:                            # int32
+            value = struct.unpack("<i", data[i:i + 4])[0]
+            i += 4
+        else:
+            raise ValueError(f"unerwarteter BSON-Typ {kind:#x} in {path}")
+        if key == name:
+            return value
+    return None

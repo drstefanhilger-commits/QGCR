@@ -70,11 +70,24 @@ class TestModelIntercept(unittest.TestCase):
         climbing = plan_intercept(Trigger("C", 0, -150, 100, 20, 5, 0, 0.5), 0, self.cfg)
         self.assertAlmostEqual(climbing.wait[2], 20 + 0.1 * climbing.along)
 
-    def test_follow_end_is_10s_along_track(self):
-        plan = plan_intercept(self.trigger, 1000.0, self.cfg)
+    def test_follow_end_is_10s_towards_trigger(self):
+        """Ab dem Wartepunkt fliegt die FSL dem Trigger entgegen (gegen seine Flugrichtung)."""
+        plan = plan_intercept(self.trigger, 1000.0, self.cfg)          # Trigger fliegt nach Osten
         follow = self.cfg.speed * self.cfg.speed_efficiency * self.cfg.follow_time
-        self.assertAlmostEqual(plan.follow_end[0] - plan.wait[0], follow)
+        self.assertAlmostEqual(plan.follow_end[0] - plan.wait[0], -follow)   # nach Westen
         self.assertAlmostEqual(plan.follow_end[1], plan.wait[1])
+        self.assertAlmostEqual(plan.follow_end[2], plan.wait[2])
+
+    def test_follow_direction_diagonal(self):
+        trigger = Trigger("D", 0, -200, -200, 20, 4, 3, 0)               # nach Nordost
+        plan = plan_intercept(trigger, 0, self.cfg)
+        de, dn = plan.follow_end[0] - plan.wait[0], plan.follow_end[1] - plan.wait[1]
+        self.assertAlmostEqual(de / dn, 4 / 3)                           # auf der Bahn ...
+        self.assertLess(de, 0)                                          # ... nach Südwest
+        self.assertLess(dn, 0)
+        tn = plan.trigger_now
+        dist = lambda p: math.hypot(p[0] - tn[0], p[1] - tn[1])
+        self.assertLess(dist(plan.follow_end), dist(plan.wait))          # näher am Trigger
 
     def test_enu_to_latlon(self):
         lat, lon = enu_to_latlon(ORIGIN, 0, 111.32)
@@ -92,6 +105,7 @@ class TestModelIntercept(unittest.TestCase):
         self.assertEqual([i.seq for i in items], list(range(6)))
         self.assertEqual(items[0].z, 10.0)                            # Aufstieg 10 m
         self.assertEqual((items[1].param1, items[1].param2), (1, self.cfg.speed))
+        self.assertEqual(items[2].param2, 1.0)                        # Wartepunkt: Annahmeradius 1 m
         self.assertAlmostEqual(items[3].param1, 12.0)
         wait_lat, wait_lon = enu_to_latlon(ORIGIN, *plan.wait[:2])
         self.assertEqual((items[2].x, items[2].y), (int(wait_lat * 1e7), int(wait_lon * 1e7)))

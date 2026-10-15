@@ -48,7 +48,7 @@ class Trigger:
 class InterceptConfig:
     climb_alt: float = 10.0         # Aufstieg auf 10 m über Grund
     lead_distance: float = 10.0     # Wartepunkt mindestens 10 m vor dem Trigger
-    follow_time: float = 10.0       # 10 s entlang der Trigger-Bahn
+    follow_time: float = 10.0       # 10 s dem Trigger entgegen (auf seiner Bahn)
     speed: float = 8.0              # Soll-Geschwindigkeit FSL (DO_CHANGE_SPEED) [m/s]
     speed_efficiency: float = 0.92  # erreichte / gesetzte Geschwindigkeit (SITL ≈ 7,5/8)
     prep_time: float = 3.0          # Trigger → Missionsstart (Planung, Upload, Startbefehl) [s]
@@ -56,6 +56,7 @@ class InterceptConfig:
     approach_time: float = 4.0      # Abbremsen am Wartepunkt [s]
     climb_rate: float = 2.0         # vertikale Geschwindigkeit für Höhenänderung [m/s]
     min_alt: float = 10.0           # Wartepunkt nie unter 10 m
+    wait_acceptance: float = 1.0    # Annahmeradius Wartepunkt [m] (PX4-Default NAV_ACC_RAD = 10 m)
     max_search: float = 3000.0      # max. Suchweg entlang der Trigger-Bahn [m]
     step: float = 1.0               # Suchschritt [m]
     timeout: float = 180.0          # Überwachung: max. Flugzeit ab Start [s]
@@ -68,7 +69,7 @@ class InterceptPlan:
     reason: str = ""
     trigger_now: tuple = None       # (e, n, u) bei Planung
     wait: tuple = None              # Wartepunkt (e, n, u)
-    follow_end: tuple = None        # Ende der 10-s-Strecke entlang der Bahn
+    follow_end: tuple = None        # Ende der 10-s-Strecke dem Trigger entgegen
     along: float = 0.0              # Abstand Trigger → Wartepunkt entlang der Bahn [m]
     t_fsl: float = 0.0              # Ankunft FSL am Wartepunkt ab Planung [s]
     t_trigger: float = 0.0          # Trigger am Wartepunkt ab Planung [s]
@@ -108,8 +109,9 @@ def plan_intercept(trigger, now, cfg):
         t_fsl = fsl_time_to(p, cfg)
         t_lead = (s - cfg.lead_distance) / v      # Trigger noch lead_distance vor dem Punkt
         if t_fsl <= t_lead:
+            # ab dem Wartepunkt dem Trigger entgegen: auf seiner Bahn gegen seine Flugrichtung
             follow = cfg.speed * cfg.speed_efficiency * cfg.follow_time
-            f = (p[0] + de * follow, p[1] + dn * follow, p[2])
+            f = (p[0] - de * follow, p[1] - dn * follow, p[2])
             path_end = s + follow + 50.0
             return InterceptPlan(
                 True, "erreichbar",
@@ -134,7 +136,7 @@ def enu_to_latlon(origin, east, north):
 def build_mission(plan, origin, cfg, target_system=1, target_component=1):
     """
     MAVLink-MISSION_ITEM_INT-Liste (Multicopter):
-    Takeoff 10 m → Geschwindigkeit → Wartepunkt → Warten → 10 s entlang der Bahn → Landen am Start.
+    Takeoff 10 m → Geschwindigkeit → Wartepunkt → Warten → 10 s dem Trigger entgegen → Landen am Start.
     """
     M = mavutil.mavlink
     rel, mis = M.MAV_FRAME_GLOBAL_RELATIVE_ALT, M.MAV_FRAME_MISSION
@@ -151,7 +153,8 @@ def build_mission(plan, origin, cfg, target_system=1, target_component=1):
 
     add(M.MAV_CMD_NAV_TAKEOFF, rel, (0, 0, 0, nan), origin[0], origin[1], cfg.climb_alt)
     add(M.MAV_CMD_DO_CHANGE_SPEED, mis, (1, cfg.speed, -1, 0))
-    add(M.MAV_CMD_NAV_WAYPOINT, rel, (0, 0, 0, nan), wait_lat, wait_lon, plan.wait[2])
+    # param2 = Annahmeradius: Wartepunkt genau anfliegen, bevor dem Trigger entgegen gedreht wird
+    add(M.MAV_CMD_NAV_WAYPOINT, rel, (0, cfg.wait_acceptance, 0, nan), wait_lat, wait_lon, plan.wait[2])
     if plan.hold >= 1.0:
         add(M.MAV_CMD_NAV_LOITER_TIME, rel, (round(plan.hold, 1), 0, 0, nan), wait_lat, wait_lon, plan.wait[2])
     add(M.MAV_CMD_NAV_WAYPOINT, rel, (0, 0, 0, nan), fol_lat, fol_lon, plan.follow_end[2])

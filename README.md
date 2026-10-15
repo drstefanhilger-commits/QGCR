@@ -263,8 +263,8 @@ sind die HomeTab-Buttons und die Modellauswahl gesperrt; mit anderem Modell biet
   Plot dient nur der Orientierung). Höhe = Höhe der Trigger-Bahn dort, mindestens 10 m.
   Zeitmodell der FSL (SITL gemessen): 3 s Vorbereitung + 16 s bis Horizontalflug + Strecke /
   (8 m/s × 0,92) + 4 s Abbremsen.
-- **Mission:** Takeoff 10 m → `DO_CHANGE_SPEED` → Wartepunkt → ggf. `NAV_LOITER_TIME` → 10 s entlang der
-  Trigger-Bahn → `NAV_LAND` am Startpunkt. Start per `MAV_CMD_MISSION_START`.
+- **Mission:** Takeoff 10 m → `DO_CHANGE_SPEED` → Wartepunkt → ggf. `NAV_LOITER_TIME` → 10 s dem Trigger
+  entgegen (auf seiner Bahn, gegen seine Flugrichtung) → `NAV_LAND` am Startpunkt. Start per `MAV_CMD_MISSION_START`.
 - **Überwachung:** Timeout (Default 180 s ab Start) oder Akku < Minimum (Default 30 %,
   `SYS_STATUS.battery_remaining`) bzw. „Abbrechen“ → RTL (`MAV_CMD_NAV_RETURN_TO_LAUNCH`).
   SITL: die simulierte Batterie fällt im Flug nur bis `SIM_BAT_MIN_PCT` (PX4-Default 50 %) und wird
