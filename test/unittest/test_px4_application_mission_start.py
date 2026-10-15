@@ -133,6 +133,13 @@ class TestPX4ApplicationMissionStart(unittest.TestCase):
         for tag in ("track", "start", "landing", "waypoints"):
             self.assertTrue(plot.find_withtag(tag), tag)
 
+        # Höhen-Plot: Mission steigt auf ~20 m und landet wieder
+        alts = [a for _, a in self.model.mission_alt_track]
+        self.assertGreater(len(alts), 20)
+        self.assertAlmostEqual(max(alts), 20.0, delta=3.0)
+        self.assertLess(alts[-1], 1.0)
+        self.assertTrue(self.app.window.home_tab.alt_plot.find_withtag("altitude"))
+
     def test_rocket_vtol_in_flight(self):
         self.start_in_flight("gz_fsl_rocket_vtol", 180)
 

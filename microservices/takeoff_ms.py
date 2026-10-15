@@ -87,6 +87,14 @@ class TakeoffMicroService:
 
         self.alt = alt
 
+        # Zielhöhe braucht die Home-Höhe (AMSL) – prüfen, BEVOR gearmt wird
+        if self.takeoff_params() is None:
+            print("[TakeoffMS] Start abgebrochen: Home-Höhe unbekannt")
+            self.state = "ERROR"
+            self.error = "home altitude unknown"
+            self.done = True
+            return
+
         self.state = "SEND_ARM"
         self.start_time = time.time()
 
@@ -159,7 +167,14 @@ class TakeoffMicroService:
         # SEND_TAKEOFF
         # --------------------------------------------------------
         if self.state == "SEND_TAKEOFF":
-            self._send_takeoff()
+            try:
+                self._send_takeoff()
+            except Exception as e:
+                print(f"[TakeoffMS] ERROR: {e}")
+                self.state = "ERROR"
+                self.error = str(e)
+                self.done = True
+                return
             self.state = "WAIT_TAKEOFF_ACK"
             self.start_time = now
             return
@@ -248,30 +263,44 @@ class TakeoffMicroService:
         )
         print("[TakeoffMS] MAV_CMD_COMPONENT_ARM_DISARM gesendet")
 
+    def takeoff_params(self):
+        """
+        (lat, lon, alt_amsl) für MAV_CMD_NAV_TAKEOFF.
+        PX4 erwartet param7 als Höhe über dem Meer (AMSL) und param5/6 als
+        Zielposition (NaN = aktuelle Position; 0/0 wäre wörtlich 0°N 0°O).
+        Zielhöhe = Home-Höhe (AMSL, HOME_POSITION) + self.alt (relativ).
+        None, wenn die Home-Höhe noch unbekannt ist.
+        """
+        home_alt = getattr(self.model, "home_alt", None)
+        if home_alt is None:
+            return None
+
+        nan = float("nan")
+        lat = self.model.vehicle_lat if self.model.vehicle_lat is not None else nan
+        lon = self.model.vehicle_lon if self.model.vehicle_lon is not None else nan
+        return lat, lon, home_alt + self.alt
+
     def _send_takeoff(self):
         """
-        Sendet TAKEOFF Command.
-        Nutzt aktuelle Position aus dem Model (falls vorhanden).
+        Sendet TAKEOFF Command (Zielhöhe self.alt über Home).
         """
-        lat = self.model.vehicle_lat if self.model.vehicle_lat is not None else 0.0
-        lon = self.model.vehicle_lon if self.model.vehicle_lon is not None else 0.0
-        alt = self.alt
+        params = self.takeoff_params()
+        if params is None:
+            raise RuntimeError("Home-Höhe unbekannt (noch keine HOME_POSITION)")
+        lat, lon, alt_amsl = params
 
         MAV_COMP_ID_AUTOPILOT1 = 1
         self.connection.master.mav.command_long_send(
             self.connection.master.target_system,
             MAV_COMP_ID_AUTOPILOT1,
             mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-            0,          # confirmation
-            0, 0, 0,    # params 1-3 unused
-            0,          # yaw
+            0,              # confirmation
+            0, 0, 0,        # params 1-3 unused
+            float("nan"),   # yaw: PX4 entscheidet
             lat,
             lon,
-            alt
+            alt_amsl
         )
-        print(f"[TakeoffMS] MAV_CMD_NAV_TAKEOFF gesendet (lat={lat}, lon={lon}, alt={alt})")
-
-        print("[TakeoffMS] DEBUG: target_system =", self.connection.master.target_system)
-        print("[TakeoffMS] DEBUG: target_component = 1")
-        print("[TakeoffMS] DEBUG: vehicle_lat/lon =", self.model.vehicle_lat, self.model.vehicle_lon)
+        print(f"[TakeoffMS] MAV_CMD_NAV_TAKEOFF gesendet (lat={lat}, lon={lon}, "
+              f"alt={alt_amsl:.1f} m AMSL = {self.alt:.1f} m über Home)")
 

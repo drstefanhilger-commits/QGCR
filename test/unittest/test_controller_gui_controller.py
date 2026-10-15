@@ -87,8 +87,19 @@ class TestControllerGUIController(unittest.TestCase):
     def test_update_plot_draws(self):
         window = MagicMock()
         self.gui.main_window = window
+        self.model.mission_alt_track = [(0.0, 0.0), (1.0, 2.0)]
         self.gui.update_plot()
         window.home_tab.canvas.draw.assert_called_once_with(self.gui.get_plot_data())
+        window.home_tab.alt_plot.draw.assert_called_once_with({"samples": [(0.0, 0.0), (1.0, 2.0)]})
+
+    def test_clear_track(self):
+        self.model.mission_track = [(47.0, 8.0)]
+        self.model.mission_alt_track = [(0.0, 1.0)]
+        self.gui.clear_track()
+
+        self.assertEqual(self.model.mission_track, [])
+        self.assertEqual(self.model.mission_alt_track, [])
+        self.assertIn("[QGCR] [GUIController] Track gelöscht", self.model.qgcr_logs())
 
     def test_tab_changed_sets_active_tab(self):
         self.gui.on_tab_changed("Log")

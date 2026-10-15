@@ -316,3 +316,34 @@ def test_mission_markers():
     m.update_vehicle_position(47.1, 8.1, 0.0)
     m.begin_mission()
     assert m.mission_markers() == ((47.1, 8.1), (47.2, 8.2))
+
+
+# ------------------------------------------------------------
+# Höhenverlauf (Höhen-Plot)
+# ------------------------------------------------------------
+def test_alt_track_only_during_mission(monkeypatch):
+    import QGCR.model.model as model_mod
+    now = [1000.0]
+    monkeypatch.setattr(model_mod.time, "time", lambda: now[0])
+
+    m = Model(QueueRegistry())
+    m.update_vehicle_position(47.0, 8.0, 5.0)
+    assert m.mission_alt_track == []
+
+    m.begin_mission()
+    m.update_vehicle_position(47.0, 8.0, 0.0)
+    now[0] += 0.2
+    m.update_vehicle_position(47.0, 8.0, 1.0)          # < 0,5 s → verworfen
+    now[0] += 0.5
+    m.update_vehicle_position(47.0, 8.0, 3.0)
+    assert [(pytest.approx(t), a) for t, a in m.mission_alt_track] == [(0.0, 0.0), (0.7, 3.0)]
+
+
+def test_clear_track_clears_both():
+    m = Model(QueueRegistry())
+    m.begin_mission()
+    m.update_vehicle_position(47.0, 8.0, 1.0)
+    assert m.mission_track and m.mission_alt_track
+    m.clear_track()
+    assert m.mission_track == [] and m.mission_alt_track == []
+    assert m.mission_running                         # Mission läuft weiter

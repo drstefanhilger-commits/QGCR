@@ -206,11 +206,25 @@ class GUIController:
             "vehicle": vehicle,
         }
 
+    def get_alt_plot_data(self):
+        """Höhenverlauf der Mission: {"samples": [(t, alt), ...]}."""
+        return {"samples": list(self.model.mission_alt_track)}
+
+    def clear_track(self):
+        """Button „Track löschen“: Track und Höhenverlauf im Plot leeren."""
+        self.model.clear_track()
+        self.model.log.qgcr("[GUIController] Track gelöscht")
+
     def update_plot(self):
         home = getattr(self.main_window, "home_tab", None) if self.main_window else None
-        plot = getattr(home, "canvas", None) if home else None
+        if home is None:
+            return
+        plot = getattr(home, "canvas", None)
         if plot is not None and hasattr(plot, "draw"):
             plot.draw(self.get_plot_data())
+        alt_plot = getattr(home, "alt_plot", None)
+        if alt_plot is not None and hasattr(alt_plot, "draw"):
+            alt_plot.draw(self.get_alt_plot_data())
 
     # ------------------------------------------------------------
     # GUI-Queue → Anzeige (aus gui_tick, Tk-Thread)

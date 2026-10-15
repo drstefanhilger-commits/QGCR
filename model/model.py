@@ -155,6 +155,9 @@ class Model:
         self.mission_track = []
         # Position beim Missionsstart (Home kann PX4 später, z. B. nach der Landung, neu setzen)
         self.mission_start_point = None
+        # Höhenverlauf während einer Mission: [(Sekunden seit Start, Höhe über Home), ...]
+        self.mission_alt_track = []
+        self.mission_t0 = None
 
         # Mission-Upload/-Download (MISSION-HFSM)
         self.mission_upload_items = None   # MAVLink-Items aus .plan (GUIController)
@@ -250,17 +253,34 @@ class Model:
     # ------------------------------------------------------------
     TRACK_MIN_DIST_M = 1.0      # neuer Punkt erst ab dieser Entfernung
     TRACK_MAX_POINTS = 10000
+    ALT_MIN_DT_S = 0.5          # Höhenverlauf: höchstens alle 0,5 s ein Punkt
 
     def begin_mission(self):
         """Mission läuft ab jetzt: neuen Track beginnen, Startpunkt festhalten."""
         self.mission_running = True
-        self.mission_track = []
+        self.clear_track()
+        self.mission_t0 = time.time()
         if self.vehicle_lat is not None and self.vehicle_lon is not None:
             self.mission_start_point = (self.vehicle_lat, self.vehicle_lon)
         elif self.home_lat is not None and self.home_lon is not None:
             self.mission_start_point = (self.home_lat, self.home_lon)
         else:
             self.mission_start_point = None
+
+    def clear_track(self):
+        """Track und Höhenverlauf leeren (Missionsstart, Button „Track löschen“)."""
+        self.mission_track = []
+        self.mission_alt_track = []
+
+    def _record_alt_point(self, alt):
+        if not self.mission_running or alt is None or self.mission_t0 is None:
+            return
+        t = time.time() - self.mission_t0
+        if self.mission_alt_track and t - self.mission_alt_track[-1][0] < self.ALT_MIN_DT_S:
+            return
+        if len(self.mission_alt_track) >= self.TRACK_MAX_POINTS:
+            return
+        self.mission_alt_track.append((t, alt))
 
     def _record_track_point(self, lat, lon):
         if not self.mission_running or lat is None or lon is None:
@@ -327,6 +347,7 @@ class Model:
         self.vehicle_lon = lon
         self.vehicle_alt = alt
         self._record_track_point(lat, lon)
+        self._record_alt_point(alt)
 
         try:
             self.queue_registry.require("gui").push(("telemetry", {

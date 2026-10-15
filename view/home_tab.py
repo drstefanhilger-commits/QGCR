@@ -4,13 +4,14 @@ import tkinter as tk
 from tkinter import ttk
 
 from QGCR.view.plot_2d import Plot2D
+from QGCR.view.plot_alt import AltitudePlot
 
 
 class HomeTab(ttk.Frame):
     """
     Home-Tab mit:
     - Button-Leiste (Arm, Disarm, Takeoff, Land, Mission, Reset) + Modellauswahl
-    - 2D-Plot (Missions-Track, Start- und Landepunkt)
+    - 2D-Plot (Missions-Track, Start- und Landepunkt) + Höhen-Plot
     """
 
     def __init__(self, parent, controller=None):
@@ -65,6 +66,13 @@ class HomeTab(ttk.Frame):
         )
         self.reset_button.pack(side=tk.LEFT, padx=5)
 
+        # Track + Höhenverlauf im Plot löschen
+        self.clear_track_button = ttk.Button(
+            frame, text="Track löschen",
+            command=lambda: self.controller.clear_track()
+        )
+        self.clear_track_button.pack(side=tk.LEFT, padx=15)
+
         # Modellauswahl (Wechsel löst RESET aus)
         choices = self.controller.get_model_choices() if self.controller else []
         self.model_var = tk.StringVar()
@@ -83,7 +91,10 @@ class HomeTab(ttk.Frame):
     # Canvas
     # ------------------------------------------------------------
     def _build_canvas(self):
-        # 2D-Plot: Missions-Track, Start- und Landepunkt
+        # Höhen-Plot unten, 2D-Plot (Missions-Track, Start- und Landepunkt) darüber
+        self.alt_plot = AltitudePlot(self)
+        self.alt_plot.pack(side=tk.BOTTOM, fill=tk.X)
+
         self.canvas = Plot2D(self)
         self.canvas.pack(fill=tk.BOTH, expand=True)
 

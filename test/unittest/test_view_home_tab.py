@@ -87,6 +87,14 @@ class TestViewHomeTabModelSelector(unittest.TestCase):
 
         self.ctrl.request_model_change.assert_called_once_with("gz_fsl_rocket_vtol")
 
+    def test_clear_track_button(self):
+        self.tab.clear_track_button.invoke()
+        self.ctrl.clear_track.assert_called_once_with()
+
+    def test_has_altitude_plot(self):
+        from QGCR.view.plot_alt import AltitudePlot
+        self.assertIsInstance(self.tab.alt_plot, AltitudePlot)
+
     def test_mission_button_sends_event(self):
         self.tab.mission_button.invoke()
         self.ctrl.handle_button_event.assert_called_once_with("MISSION_START")
