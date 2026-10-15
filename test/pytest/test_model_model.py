@@ -302,3 +302,17 @@ def test_begin_mission_start_point_falls_back_to_home():
     m.update_home_position(47.0, 8.0, 400.0)
     m.begin_mission()
     assert m.mission_start_point == (47.0, 8.0)
+
+
+def test_mission_markers():
+    m = Model(QueueRegistry())
+    assert m.mission_markers() == (None, None)
+
+    m.update_home_position(47.0, 8.0, 400.0)
+    m.add_mission_item(0, 21, 47.2, 8.2, 0.0)
+    assert m.mission_markers() == ((47.0, 8.0), None)      # Mission noch nicht "ready"
+
+    m.mission.ready = True
+    m.update_vehicle_position(47.1, 8.1, 0.0)
+    m.begin_mission()
+    assert m.mission_markers() == ((47.1, 8.1), (47.2, 8.2))

@@ -26,6 +26,7 @@ from QGCR.logging.log_router import LogRouter
 from QGCR.core.startup_cleanup import StartupCleanup
 
 from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
+from QGCR.sim.gazebo_markers import GazeboMarkers
 
 
 def parse_args(argv=None):
@@ -88,6 +89,12 @@ class Application:
         self.log_router = LogRouter(self.model, self.queue_registry)
         self.model.log = self.log_router
 
+        # Start-/Landepunkt in Gazebo (eigener Worker-Thread)
+        self.gz_markers = GazeboMarkers(
+            px4_dir=os.environ.get("PX4_DIR", "~/PX4-Autopilot"),
+            log=self.log_router.qgcr,
+        )
+
         # ------------------------------------------------------------
         # Dispatcher + Connection
         # ------------------------------------------------------------
@@ -147,11 +154,19 @@ class Application:
                 self.model.check_timeout()
                 self.ms_controller.tick()
                 self.main_controller.on_update()
+                self._update_gz_markers()
             except Exception as e:
                 print("UpdateLoop error:", e)
                 traceback.print_exc()
 
             time.sleep(0.05)
+
+    def _update_gz_markers(self):
+        # STARTUP = neue Gazebo-Instanz (Programmstart, RESET, Modellwechsel)
+        if self.model.hfsm_main == "STARTUP":
+            self.gz_markers.invalidate()
+            return
+        self.gz_markers.request(*self.model.mission_markers())
 
     def _connect_loop(self):
         try:
@@ -213,6 +228,10 @@ class Application:
         for thread in (getattr(self, "update_thread", None), getattr(self, "_conn_thread", None)):
             if thread is not None and thread.is_alive() and thread is not threading.current_thread():
                 thread.join(timeout=2.0)
+
+        markers = getattr(self, "gz_markers", None)
+        if markers is not None:
+            markers.stop()
 
         starter = getattr(self.model, "startup_controller", None)
         if starter is not None and hasattr(starter, "stop_all"):

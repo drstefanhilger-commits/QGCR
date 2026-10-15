@@ -133,6 +133,7 @@ Tk-Mainloop (GUI):      Buttons → GUIController.handle_button_event() → mode
 | `MicroServiceController` | `controller/microservice_controller.py` | Erzeugt und tickt die MicroServices |
 | `MainController` | `controller/main_controller.py` | Tickt die aktive HFSM, wechselt HFSMs (kein FSM) |
 | `GUIController` | `controller/gui_controller.py` | Vermittelt zwischen GUI, Model und MainWindow |
+| `GazeboMarkers` | `sim/gazebo_markers.py` | Start- (grün) und Landepunkt (rot) als visuelle Modelle `qgcr_start` / `qgcr_landing` in Gazebo (Scheibe + 4-m-Mast, keine Kollision); eigener Worker-Thread, `gz service /world/default/create|remove` |
 | `PX4SwarmStarter` | `sim/px4_swarm_starter.py` | Startet/stoppt PX4-SITL-Instanzen (`make px4_sitl gz_<modell>`); stdout+stderr zusammen → PX4-Log |
 | `StartupCleanup` | `core/startup_cleanup.py` | Beendet PX4-/Gazebo-Reste, gibt Ports frei, löscht Gazebo-SHM |
 
@@ -258,6 +259,9 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
   Landepunkt (rotes ⊗ = `NAV_LAND`/`NAV_VTOL_LAND` der Mission) und aktueller Position (orange).
   Der Track bleibt nach der Landung sichtbar, bis die nächste Mission startet.
   Beispiel: `docs/plot_2d_vtol_mission.png` (fsl_rocket_vtol, SITL)
+- Gazebo: dieselben Start-/Landepunkte (`model.mission_markers()`) setzt `GazeboMarkers` in die Welt
+  (lat/lon → ENU um `<spherical_coordinates>` der World-SDF). Nach RESET/Modellwechsel (neue
+  Gazebo-Instanz, STARTUP) werden sie neu platziert; fehlgeschlagene Versuche alle 2 s wiederholt.
 - Buttons rufen `GUIController.handle_button_event(name)` auf; erlaubte Events
   (`VALID_BUTTON_EVENTS`): `ARM`, `DISARM`, `TAKEOFF`, `LAND`, `MISSION_START`, `MISSION_UPLOAD`,
   `MISSION_DOWNLOAD`, `MISSION_VALIDATE`, `MISSION_STOP`, `RESET`, `STOP` → `model.hfsm_events`

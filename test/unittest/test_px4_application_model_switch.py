@@ -11,7 +11,7 @@ from unittest.mock import patch
 from pymavlink import mavutil
 
 from QGCR.main import Application
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose
 
 
 def count_procs(*pgrep_args):
@@ -92,6 +92,9 @@ class TestPX4ApplicationModelSwitch(unittest.TestCase):
         self.assertIn("HFSM-Wechsel: READY → RESET", qgcr_log)
         self.assertIn("HFSM-Wechsel: RESET → STARTUP", qgcr_log)
         self.assertEqual(combo.get(), "gz_fsl_rocket_vtol")
+
+        # neue Gazebo-Instanz nach RESET: Startpunkt wird wieder gesetzt
+        self.pump_until(lambda: gz_model_pose("qgcr_start") is not None, 20, "qgcr_start in Gazebo")
         self.assertEqual(count_procs("-x", "px4"), 1)
         self.assertEqual(count_procs("-f", "^gz sim"), 1)
 

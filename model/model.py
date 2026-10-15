@@ -275,6 +275,17 @@ class Model:
             return
         self.mission_track.append((lat, lon))
 
+    def mission_markers(self):
+        """
+        (start, landing) als (lat, lon) oder None – für 2D-Plot und Gazebo.
+        Start: Position beim Missionsstart, vorher Home. Landung: aus der Mission.
+        """
+        start = self.mission_start_point
+        if start is None and self.home_lat is not None and self.home_lon is not None:
+            start = (self.home_lat, self.home_lon)
+        landing = self.landing_point() if self.mission.ready else None
+        return start, landing
+
     def landing_point(self):
         """(lat, lon) der Landung aus der Mission (NAV_LAND / NAV_VTOL_LAND) oder None."""
         for item in reversed(self.mission.items):

@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from QGCR.main import Application
 from QGCR.test.unittest.plan_fixture import write_flight_plan
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose
 
 
 @requires_sitl
@@ -119,6 +119,12 @@ class TestPX4ApplicationMissionStart(unittest.TestCase):
 
     def test_rocket_vtol_from_ground(self):
         self.start_from_ground("gz_fsl_rocket_vtol", 180)
+
+        # Gazebo: Start- und Landepunkt als Modelle (Mission startet/landet am Welt-Ursprung)
+        for name in ("qgcr_start", "qgcr_landing"):
+            pose = gz_model_pose(name)
+            self.assertIsNotNone(pose, name)
+            self.assertLess(abs(pose[0]) + abs(pose[1]), 3.0, (name, pose))
 
         # 2D-Plot: Track der Mission, Start- und Landepunkt
         self.assertGreater(len(self.model.mission_track), 10)

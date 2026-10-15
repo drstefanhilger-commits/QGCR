@@ -92,3 +92,19 @@ def send_gcs_heartbeat(mav):
         0,
         mavutil.mavlink.MAV_STATE_ACTIVE,
     )
+
+
+def gz_model_pose(name):
+    """(x, y) eines Modells in der Gazebo-Welt oder None."""
+    env = dict(os.environ, GZ_IP="127.0.0.1")
+    try:
+        out = subprocess.run(["gz", "model", "-m", name, "-p"], env=env,
+                             capture_output=True, text=True, timeout=15).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = out.splitlines()
+    for i, line in enumerate(lines):
+        if "Pose [ XYZ" in line and i + 1 < len(lines):
+            values = lines[i + 1].strip().strip("[]").split()
+            return float(values[0]), float(values[1])
+    return None

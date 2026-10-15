@@ -164,6 +164,34 @@ class TestMainApplicationInit(unittest.TestCase):
 
         self.assertEqual(calls, ["pending", "timeout", "hfsm"])
 
+    def test_update_loop_requests_gazebo_markers(self):
+        self.app.connection = MagicMock()
+        self.app.ms_controller = MagicMock()
+        self.app.main_controller = MagicMock()
+        self.app.gz_markers = MagicMock()
+        m = self.app.model
+
+        def one_tick():
+            with patch("QGCR.main.time.sleep", side_effect=lambda _: setattr(self.app, "_stop", True)):
+                self.app._stop = False
+                self.app._update_loop()
+
+        m.hfsm_main = "STARTUP"
+        one_tick()
+        self.app.gz_markers.invalidate.assert_called_once()
+        self.app.gz_markers.request.assert_not_called()
+
+        m.hfsm_main = "READY"
+        m.update_home_position(47.0, 8.0, 400.0)
+        one_tick()
+        self.app.gz_markers.request.assert_called_once_with((47.0, 8.0), None)
+
+    def test_shutdown_stops_gazebo_markers(self):
+        self.app.gz_markers = MagicMock()
+        with patch.object(self.app.root, "destroy"):
+            self.app.shutdown()
+        self.app.gz_markers.stop.assert_called_once()
+
     def test_cleanup_runs_first(self):
         self.cleanup.run_full_cleanup.assert_called_once()
 

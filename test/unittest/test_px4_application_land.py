@@ -47,9 +47,12 @@ class TestPX4ApplicationLand(unittest.TestCase):
             if cond():
                 return
             time.sleep(0.05)
+        log = self.app.window.log_tab
+        tail = lambda w: "\n".join(w.get("1.0", "end").strip().splitlines()[-25:])
         self.fail(f"Timeout: {what} (hfsm={self.model.hfsm_main}/{self.model.hfsm_sub}, "
                   f"mode={self.model.px4_mode}, armed={self.model.px4_armed}, "
-                  f"alt={self.model.vehicle_alt}, takeoff={self.model.takeoff.state}/{self.model.takeoff.error})")
+                  f"alt={self.model.vehicle_alt}, takeoff={self.model.takeoff.state}/{self.model.takeoff.error})\n"
+                  f"--- QGCR ---\n{tail(log.qgcr_text)}\n--- PX4 ---\n{tail(log.px4_text)}")
 
     def fly_and_land(self):
         self.pump_until(lambda: self.model.hfsm_main == "READY" and self.model.ready_to_arm,
