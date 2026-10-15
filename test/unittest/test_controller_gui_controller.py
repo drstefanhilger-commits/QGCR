@@ -58,6 +58,38 @@ class TestControllerGUIController(unittest.TestCase):
         self.gui.process_gui_queue()
         self.assertEqual(self.model.queue_registry.require("gui").pop_all(), [])
 
+    def test_plot_data(self):
+        m = self.model
+        m.home_lat, m.home_lon = 47.0, 8.0
+        m.vehicle_lat, m.vehicle_lon = 47.001, 8.0
+        m.mission_track = [(47.0, 8.0), (47.001, 8.0)]
+        m.add_mission_item(0, 22, 47.0, 8.0, 20.0)
+        m.add_mission_item(1, 189, 0.0, 0.0, 0.0)          # DO_LAND_START ohne Position
+        m.add_mission_item(2, 21, 47.002, 8.001, 0.0)
+
+        data = self.gui.get_plot_data()
+        self.assertEqual(data["waypoints"], [])            # Mission noch nicht "ready"
+        self.assertIsNone(data["landing"])
+
+        m.mission.ready = True
+        data = self.gui.get_plot_data()
+        self.assertEqual(data["track"], [(47.0, 8.0), (47.001, 8.0)])
+        self.assertIsNot(data["track"], m.mission_track)   # Kopie
+        self.assertEqual(data["start"], (47.0, 8.0))           # vor einer Mission: Home
+
+        m.mission_start_point = (47.0005, 8.0005)               # nach Missionsstart
+        m.home_lat, m.home_lon = 47.002, 8.001                  # Home später neu gesetzt
+        self.assertEqual(self.gui.get_plot_data()["start"], (47.0005, 8.0005))
+        self.assertEqual(data["vehicle"], (47.001, 8.0))
+        self.assertEqual(data["landing"], (47.002, 8.001))
+        self.assertEqual(data["waypoints"], [(47.0, 8.0), (47.002, 8.001)])
+
+    def test_update_plot_draws(self):
+        window = MagicMock()
+        self.gui.main_window = window
+        self.gui.update_plot()
+        window.home_tab.canvas.draw.assert_called_once_with(self.gui.get_plot_data())
+
     def test_tab_changed_sets_active_tab(self):
         self.gui.on_tab_changed("Log")
         self.assertEqual(self.model.active_tab, "Log")

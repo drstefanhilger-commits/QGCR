@@ -150,7 +150,7 @@ class AirborneHFSM(BaseHFSM):
 
         self._reset_takeoff()
         connection.send(cmd_mission_start(master.target_system, master.target_component))
-        self.model.mission_running = True
+        self.model.begin_mission()
         self.model.hfsm_sub = "MISSION"
         self.model.push_state_update()
         self.model.log.qgcr("[AirborneHFSM] MISSION_START gesendet")

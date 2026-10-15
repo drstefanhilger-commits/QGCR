@@ -3,12 +3,14 @@
 import tkinter as tk
 from tkinter import ttk
 
+from QGCR.view.plot_2d import Plot2D
+
 
 class HomeTab(ttk.Frame):
     """
     Home-Tab mit:
     - Button-Leiste (Arm, Disarm, Takeoff, Land, Mission, Reset) + Modellauswahl
-    - Canvas (Map/Plot Platzhalter)
+    - 2D-Plot (Missions-Track, Start- und Landepunkt)
     """
 
     def __init__(self, parent, controller=None):
@@ -81,15 +83,9 @@ class HomeTab(ttk.Frame):
     # Canvas
     # ------------------------------------------------------------
     def _build_canvas(self):
-        self.canvas = tk.Canvas(self, bg="white")
+        # 2D-Plot: Missions-Track, Start- und Landepunkt
+        self.canvas = Plot2D(self)
         self.canvas.pack(fill=tk.BOTH, expand=True)
-
-        self.canvas.create_text(
-            400, 250,
-            text="2D Plot Canvas",
-            fill="gray",
-            font=("Arial", 20)
-        )
 
     # ------------------------------------------------------------
     # Öffentliche API

@@ -299,8 +299,10 @@ class TestMissionHFSM(unittest.TestCase):
         self.model.px4_armed = True
         self.model.px4_mode = "AUTO.MISSION"
 
+        self.model.mission_track = [(1.0, 2.0)]          # alter Track
         self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
         self.assertTrue(self.model.mission_running)
+        self.assertEqual(self.model.mission_track, [])
         self.assertEqual(self.model.mission_status, "Mission läuft")
 
     def test_start_rejected_after_timeout(self):

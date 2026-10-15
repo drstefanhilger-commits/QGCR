@@ -120,6 +120,13 @@ class TestPX4ApplicationMissionStart(unittest.TestCase):
     def test_rocket_vtol_from_ground(self):
         self.start_from_ground("gz_fsl_rocket_vtol", 180)
 
+        # 2D-Plot: Track der Mission, Start- und Landepunkt
+        self.assertGreater(len(self.model.mission_track), 10)
+        self.pump_until(lambda: self.app.window.home_tab.canvas.find_withtag("track"), 5, "Track im Plot")
+        plot = self.app.window.home_tab.canvas
+        for tag in ("track", "start", "landing", "waypoints"):
+            self.assertTrue(plot.find_withtag(tag), tag)
+
     def test_rocket_vtol_in_flight(self):
         self.start_in_flight("gz_fsl_rocket_vtol", 180)
 

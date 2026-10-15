@@ -231,7 +231,7 @@ class MissionHFSM(BaseHFSM):
         """True, wenn der Zustand gewechselt wird."""
         if self.model.px4_armed and self.model.px4_mode == "AUTO.MISSION":
             self._start_deadline = None
-            self.model.mission_running = True
+            self.model.begin_mission()
             self._set_status("Mission läuft")
             self._next_state = MainState.AIRBORNE
             return True

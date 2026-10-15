@@ -188,6 +188,34 @@ class GUIController:
         home.set_model(self.get_selected_model(), enabled=self.can_change_model())
 
     # ------------------------------------------------------------
+    # 2D-Plot (HomeTab)
+    # ------------------------------------------------------------
+    def get_plot_data(self):
+        """Track, Wegpunkte, Start/Landung, Position für den 2D-Plot (Grad)."""
+        m = self.model
+        # Startpunkt: Position beim Missionsstart, sonst (vor der ersten Mission) Home
+        start = m.mission_start_point
+        if start is None and m.home_lat is not None and m.home_lon is not None:
+            start = (m.home_lat, m.home_lon)
+        vehicle = (m.vehicle_lat, m.vehicle_lon) if m.vehicle_lat is not None and m.vehicle_lon is not None else None
+        waypoints = [(wp["x"], wp["y"]) for wp in list(m.mission.items)
+                     if wp["command"] in (16, 21, 22, 31, 85) and (wp["x"] or wp["y"])]
+
+        return {
+            "track": list(m.mission_track),        # Kopie (Update-Thread hängt an)
+            "waypoints": waypoints if m.mission.ready else [],
+            "start": start,
+            "landing": m.landing_point() if m.mission.ready else None,
+            "vehicle": vehicle,
+        }
+
+    def update_plot(self):
+        home = getattr(self.main_window, "home_tab", None) if self.main_window else None
+        plot = getattr(home, "canvas", None) if home else None
+        if plot is not None and hasattr(plot, "draw"):
+            plot.draw(self.get_plot_data())
+
+    # ------------------------------------------------------------
     # GUI-Queue → Anzeige (aus gui_tick, Tk-Thread)
     # ------------------------------------------------------------
     def process_gui_queue(self):
@@ -357,8 +385,9 @@ class GUIController:
         # MissionTab (Buttons, Mission, Status)
         self.update_mission_tab()
 
-        # HomeTab (Modellauswahl)
+        # HomeTab (Modellauswahl, 2D-Plot)
         self.update_model_selector()
+        self.update_plot()
 
         if self.root:
             self.root.after(500, self.gui_tick)

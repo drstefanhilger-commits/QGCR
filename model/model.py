@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/model/model.py ===
 
+import math
 import time
 from collections import deque
 
@@ -150,6 +151,11 @@ class Model:
         self.mission_running = False
         self.mission_loaded = False
 
+        # Geflogener Track während einer Mission: [(lat, lon), ...] in Grad (2D-Plot)
+        self.mission_track = []
+        # Position beim Missionsstart (Home kann PX4 später, z. B. nach der Landung, neu setzen)
+        self.mission_start_point = None
+
         # Mission-Upload/-Download (MISSION-HFSM)
         self.mission_upload_items = None   # MAVLink-Items aus .plan (GUIController)
         self.mission_upload_file = None
@@ -240,6 +246,43 @@ class Model:
         self._lost_counter = 0
 
     # ------------------------------------------------------------
+    # Missions-Track (2D-Plot)
+    # ------------------------------------------------------------
+    TRACK_MIN_DIST_M = 1.0      # neuer Punkt erst ab dieser Entfernung
+    TRACK_MAX_POINTS = 10000
+
+    def begin_mission(self):
+        """Mission läuft ab jetzt: neuen Track beginnen, Startpunkt festhalten."""
+        self.mission_running = True
+        self.mission_track = []
+        if self.vehicle_lat is not None and self.vehicle_lon is not None:
+            self.mission_start_point = (self.vehicle_lat, self.vehicle_lon)
+        elif self.home_lat is not None and self.home_lon is not None:
+            self.mission_start_point = (self.home_lat, self.home_lon)
+        else:
+            self.mission_start_point = None
+
+    def _record_track_point(self, lat, lon):
+        if not self.mission_running or lat is None or lon is None:
+            return
+        if self.mission_track:
+            last_lat, last_lon = self.mission_track[-1]
+            dy = (lat - last_lat) * 111_320.0
+            dx = (lon - last_lon) * 111_320.0 * math.cos(math.radians(lat))
+            if dx * dx + dy * dy < self.TRACK_MIN_DIST_M ** 2:
+                return
+        if len(self.mission_track) >= self.TRACK_MAX_POINTS:
+            return
+        self.mission_track.append((lat, lon))
+
+    def landing_point(self):
+        """(lat, lon) der Landung aus der Mission (NAV_LAND / NAV_VTOL_LAND) oder None."""
+        for item in reversed(self.mission.items):
+            if item["command"] in (21, 85):
+                return (item["x"], item["y"])
+        return None
+
+    # ------------------------------------------------------------
     # TIMEOUT
     # ------------------------------------------------------------
     def check_timeout(self):
@@ -272,6 +315,7 @@ class Model:
         self.vehicle_lat = lat
         self.vehicle_lon = lon
         self.vehicle_alt = alt
+        self._record_track_point(lat, lon)
 
         try:
             self.queue_registry.require("gui").push(("telemetry", {

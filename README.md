@@ -252,6 +252,12 @@ MainWindow(parent=root, controller=gui_controller, queue_registry=queue_registry
 ```
 
 - `MainWindow` (ttk.Frame): Notebook mit `HomeTab`, `MissionTab`, `LogTab` + `StatusBar`
+- HomeTab-2D-Plot (`view/plot_2d.py`): Draufsicht in Metern (Nord oben, Maßstab automatisch) mit
+  Missions-Track (blau, aufgezeichnet solange `model.mission_running`, ab 1 m Abstand, max. 10 000 Punkte),
+  geplanten Wegpunkten (grau gestrichelt), Startpunkt (grünes Dreieck = Position beim Missionsstart),
+  Landepunkt (rotes ⊗ = `NAV_LAND`/`NAV_VTOL_LAND` der Mission) und aktueller Position (orange).
+  Der Track bleibt nach der Landung sichtbar, bis die nächste Mission startet.
+  Beispiel: `docs/plot_2d_vtol_mission.png` (fsl_rocket_vtol, SITL)
 - Buttons rufen `GUIController.handle_button_event(name)` auf; erlaubte Events
   (`VALID_BUTTON_EVENTS`): `ARM`, `DISARM`, `TAKEOFF`, `LAND`, `MISSION_START`, `MISSION_UPLOAD`,
   `MISSION_DOWNLOAD`, `MISSION_VALIDATE`, `MISSION_STOP`, `RESET`, `STOP` → `model.hfsm_events`

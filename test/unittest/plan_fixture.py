@@ -14,7 +14,8 @@ WAYPOINTS = [
 ]
 
 
-HOME = (47.397742, 8.545594)
+# Ursprung der Gazebo-Welt "default" = Startposition des Fahrzeugs in SITL
+HOME = (47.397971, 8.546164)
 M = mavutil.mavlink
 
 

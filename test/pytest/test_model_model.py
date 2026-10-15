@@ -232,3 +232,73 @@ def test_gui_queue_stays_bounded_under_check_timeout():
 ])
 def test_decode_px4_mode(main, sub, expected):
     assert Model.decode_px4_mode((main << 16) | (sub << 24)) == expected
+
+
+# ------------------------------------------------------------
+# Missions-Track (2D-Plot)
+# ------------------------------------------------------------
+def test_track_only_while_mission_running():
+    m = Model(QueueRegistry())
+    m.update_vehicle_position(47.0, 8.0, 10.0)
+    assert m.mission_track == []
+
+    m.begin_mission()
+    m.update_vehicle_position(47.0, 8.0, 10.0)
+    m.update_vehicle_position(47.0001, 8.0, 10.0)      # ~11 m nördlich
+    assert m.mission_track == [(47.0, 8.0), (47.0001, 8.0)]
+
+
+def test_track_min_distance_filter():
+    m = Model(QueueRegistry())
+    m.begin_mission()
+    m.update_vehicle_position(47.0, 8.0, 10.0)
+    m.update_vehicle_position(47.000001, 8.0, 10.0)    # ~0,1 m → verworfen
+    assert len(m.mission_track) == 1
+
+
+def test_begin_mission_clears_track():
+    m = Model(QueueRegistry())
+    m.begin_mission()
+    m.update_vehicle_position(47.0, 8.0, 10.0)
+    m.begin_mission()
+    assert m.mission_track == [] and m.mission_running
+
+
+def test_track_is_capped():
+    m = Model(QueueRegistry())
+    m.TRACK_MAX_POINTS = 3
+    m.begin_mission()
+    for i in range(10):
+        m.update_vehicle_position(47.0 + i * 0.001, 8.0, 10.0)
+    assert len(m.mission_track) == 3
+
+
+def test_landing_point():
+    m = Model(QueueRegistry())
+    assert m.landing_point() is None
+    m.add_mission_item(0, 22, 47.0, 8.0, 20.0)
+    m.add_mission_item(1, 16, 47.1, 8.1, 20.0)
+    m.add_mission_item(2, 21, 47.2, 8.2, 0.0)
+    assert m.landing_point() == (47.2, 8.2)
+
+    m.clear_mission()
+    m.add_mission_item(0, 85, 47.3, 8.3, 0.0)          # NAV_VTOL_LAND
+    assert m.landing_point() == (47.3, 8.3)
+
+
+def test_begin_mission_keeps_start_point():
+    m = Model(QueueRegistry())
+    m.update_home_position(47.0, 8.0, 400.0)
+    m.update_vehicle_position(47.001, 8.001, 0.0)
+    m.begin_mission()
+    assert m.mission_start_point == (47.001, 8.001)
+
+    m.update_home_position(47.5, 8.5, 400.0)           # PX4 setzt Home nach der Landung neu
+    assert m.mission_start_point == (47.001, 8.001)
+
+
+def test_begin_mission_start_point_falls_back_to_home():
+    m = Model(QueueRegistry())
+    m.update_home_position(47.0, 8.0, 400.0)
+    m.begin_mission()
+    assert m.mission_start_point == (47.0, 8.0)

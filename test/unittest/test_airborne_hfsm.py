@@ -202,6 +202,7 @@ class TestAirborneHFSM(unittest.TestCase):
     def test_mission_start_in_flight(self):
         conn = self.start_flight()
         self.load_mission()
+        self.model.mission_track = [(1.0, 2.0)]          # alter Track
         self.model.hfsm_events.append("MISSION_START")
 
         self.assertEqual(self.fsm.on_update(), MainState.AIRBORNE)
@@ -209,6 +210,7 @@ class TestAirborneHFSM(unittest.TestCase):
         msg = conn.send.call_args[0][0]
         self.assertEqual(msg.command, mavutil.mavlink.MAV_CMD_MISSION_START)
         self.assertTrue(self.model.mission_running)
+        self.assertEqual(self.model.mission_track, [])
         self.assertEqual(self.model.hfsm_sub, "MISSION")
         self.takeoff.reset.assert_called()
 
