@@ -16,7 +16,8 @@ class Plot2D(tk.Canvas):
         "start": (lat, lon) | None, "landing": (lat, lon) | None,
         "vehicle": (lat, lon) | None,
         optional (FSL-Tab): "circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon), ...],
-        "wait": (lat, lon) | None, "trigger_now": (lat, lon) | None,
+        "wait": (lat, lon) | None, "meet": (lat, lon) | None (Treffpunkt),
+        "trigger_now": (lat, lon) | None,
         "trigger_id": str, "trigger_heading": Grad (0 = Nord),
         "trigger_distance": Abstand Trigger–FSL [m] | None (Linie Trigger ↔ Position mit Beschriftung)
     }
@@ -90,7 +91,7 @@ class Plot2D(tk.Canvas):
         layers = {key: [self._to_metres(origin, p[:2]) for p in data.get(key) or []]
                   for key in ("track", "waypoints", "trigger_path")}
         singles = {key: self._to_metres(origin, data[key][:2])
-                   for key in ("start", "landing", "vehicle", "wait") if data.get(key)}
+                   for key in ("start", "landing", "vehicle", "wait", "meet") if data.get(key)}
         points = layers["track"] + layers["waypoints"] + layers["trigger_path"] + list(singles.values())
 
         circle = None
@@ -158,6 +159,14 @@ class Plot2D(tk.Canvas):
             self.create_polygon(x, y - 9, x + 9, y, x, y + 9, x - 9, y,
                                 fill="gold", outline="darkorange", tags=("wait",))
             self.create_text(x, y - 17, text="Wartepunkt", fill="darkorange", tags=("wait",))
+
+        # Treffpunkt: rotes Kreuz im Kreis (erwartet bzw. laufend berechnet)
+        if "meet" in singles:
+            x, y = px(singles["meet"])
+            self.create_oval(x - 7, y - 7, x + 7, y + 7, outline="crimson", width=2, tags=("meet",))
+            self.create_line(x - 10, y, x + 10, y, fill="crimson", width=2, tags=("meet",))
+            self.create_line(x, y - 10, x, y + 10, fill="crimson", width=2, tags=("meet",))
+            self.create_text(x, y + 18, text="Treffpunkt", fill="crimson", tags=("meet",))
 
         # Abstand Trigger ↔ FSL: gestrichelte Linie mit Beschriftung
         if data.get("trigger_now") and "vehicle" in singles and data.get("trigger_distance") is not None:

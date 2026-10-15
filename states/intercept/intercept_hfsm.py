@@ -1,9 +1,13 @@
 # === PFAD-B FULL FILE: QGCR/states/intercept/intercept_hfsm.py ===
 
+import math
 import threading
 import time
 
-from QGCR.model.intercept import InterceptConfig, build_mission, plan_intercept
+from QGCR.model.intercept import (
+    InterceptConfig, build_mission, enu_to_latlon, latlon_to_enu, plan_intercept, pursuit,
+    reposition_command, return_time,
+)
 from QGCR.model.mavlink_commands import cmd_mission_start, cmd_rtl
 from QGCR.states.base_hfsm import BaseHFSM
 from QGCR.states.main_state import MainState
@@ -13,10 +17,13 @@ class InterceptHFSM(BaseHFSM):
     """
     INTERCEPT (Tab „FSL“, kontrollierte FSL-Drohne):
 
-    IDLE   ─INTERCEPT_TRIGGER→ Wartepunkt planen; erreichbar → UPLOAD (Worker-Thread)
-    UPLOAD ─OK→ MISSION_START → START ─armed + AUTO.MISSION→ FLIGHT
-    FLIGHT ─Timeout / Akku < Minimum / INTERCEPT_ABORT→ RTL (zurück zum Start, landen)
-    FLIGHT/RTL ─gelandet + disarmed→ IDLE
+    IDLE     ─INTERCEPT_TRIGGER→ Wartepunkt (Lot-Fußpunkt) planen; erreichbar → UPLOAD
+    UPLOAD   ─OK→ MISSION_START → START ─armed + AUTO.MISSION→ APPROACH
+    APPROACH ─Wartepunkt erreicht→ PURSUE: laufend entgegen / nachfliegen, Treffpunkt per
+             DO_REPOSITION nachführen
+    PURSUE   ─Treffen (≤ meet_radius) / Nachflug unmöglich / Zeit reicht nicht→ RTL
+    APPROACH/PURSUE ─Timeout / Akku < Minimum / INTERCEPT_ABORT→ RTL
+    RTL      ─gelandet + disarmed→ IDLE
     Immer nur ein Trigger: neue Trigger außerhalb von IDLE werden verworfen.
     Tab verlassen → READY (während eines Flugs erst nach der Landung).
     RESET im Flug: erst RTL + Landung, dann RESET.
@@ -24,6 +31,10 @@ class InterceptHFSM(BaseHFSM):
 
     FSL_MODEL = "gz_fsl_rocket_vtol"
     START_TIMEOUT = 10.0
+    ARRIVAL_RADIUS = 2.5        # Wartepunkt erreicht [m] (horizontal)
+    REPOSITION_MOVE = 3.0       # Treffpunkt neu senden ab dieser Verschiebung [m]
+    REPOSITION_PERIOD = 2.0     # ... spätestens alle 2 s
+    FLYING = ("APPROACH", "PURSUE", "RTL")
 
     def __init__(self, model):
         super().__init__(model, MainState.INTERCEPT)
@@ -38,6 +49,7 @@ class InterceptHFSM(BaseHFSM):
         self._seen_armed = False
         self._rtl_sent = False
         self._reset_after_landing = False
+        self._last_reposition = None    # (Zeit, (e, n, u))
 
     # ------------------------------------------------------------
     # Lifecycle
@@ -56,7 +68,7 @@ class InterceptHFSM(BaseHFSM):
             self._finish_upload()
         elif sub == "START":
             self._check_start()
-        elif sub in ("FLIGHT", "RTL"):
+        elif sub in self.FLYING:
             if self._check_flight():
                 return
 
@@ -140,9 +152,11 @@ class InterceptHFSM(BaseHFSM):
 
         items = build_mission(plan, origin, cfg)
         self._store_mission(items)
+        self.model.intercept_pursuit = None
+        self.model.intercept_min_distance = None
         self._set_status(
-            f"Trigger {trigger.drone_id}: Wartepunkt {plan.along:.0f} m vor dem Trigger, "
-            f"FSL nach {plan.t_fsl:.0f} s, wartet {plan.hold:.0f} s – Upload …"
+            f"Trigger {trigger.drone_id}: Wartepunkt nach {plan.t_fsl:.0f} s, dann vermutlich "
+            f"{plan.mode} (Treffen nach weiteren {plan.t_meet:.0f} s) – Upload …"
         )
 
         self._job_ms = ms
@@ -205,8 +219,8 @@ class InterceptHFSM(BaseHFSM):
             self._seen_armed = True
             self._rtl_sent = False
             self.model.begin_mission()
-            self._set_sub("FLIGHT")
-            self._set_status("FSL fliegt zum Wartepunkt")
+            self._set_sub("APPROACH")
+            self._set_status("FSL fliegt auf kürzestem Weg zur Trigger-Bahn (Wartepunkt)")
         elif time.time() > self._start_deadline:
             self._start_deadline = None
             self._set_sub("IDLE")
@@ -221,21 +235,111 @@ class InterceptHFSM(BaseHFSM):
         elif self._seen_armed:
             m.mission_running = False
             self._set_sub("IDLE")
-            self._set_status("FSL gelandet")
+            self._set_status(f"FSL gelandet{self._min_distance_text()}")
             if self._reset_after_landing:
                 self._reset_after_landing = False
                 self._next_state = MainState.RESET
                 return True
             return False
 
-        if self.model.hfsm_sub == "FLIGHT" and not self._rtl_sent:
+        self._track_min_distance()
+
+        sub = m.hfsm_sub
+        if sub in ("APPROACH", "PURSUE") and not self._rtl_sent:
             cfg = self._config()
             elapsed = time.time() - self._flight_start
             if elapsed > cfg.timeout:
                 self._abort(f"Timeout nach {elapsed:.0f} s")
             elif m.battery_remaining is not None and m.battery_remaining < cfg.battery_min:
                 self._abort(f"Akku {m.battery_remaining:.0f} % < {cfg.battery_min:.0f} %")
+            elif sub == "APPROACH":
+                self._check_arrival()
+            else:
+                self._pursue(elapsed)
         return False
+
+    # ------------------------------------------------------------
+    # Wartepunkt → entgegen / nachfliegen
+    # ------------------------------------------------------------
+    def _fsl_enu(self):
+        m = self.model
+        if m.vehicle_lat is None or m.intercept_origin is None:
+            return None
+        e, n = latlon_to_enu(m.intercept_origin, m.vehicle_lat, m.vehicle_lon)
+        return e, n, m.vehicle_alt or 0.0
+
+    def _check_arrival(self):
+        pos, plan = self._fsl_enu(), self.model.intercept_plan
+        if pos is None or plan is None:
+            return
+        if math.hypot(pos[0] - plan.wait[0], pos[1] - plan.wait[1]) <= self.ARRIVAL_RADIUS:
+            self._set_sub("PURSUE")
+            self._last_reposition = None
+            self.model.log.qgcr("[InterceptHFSM] Wartepunkt erreicht → Entscheidung")
+            self._pursue(time.time() - self._flight_start)
+
+    def _pursue(self, elapsed):
+        m, cfg = self.model, self._config()
+        pos = self._fsl_enu()
+        if pos is None:
+            return
+        now = time.time()
+
+        # Positionen gleich → zurück und landen
+        distance = m.intercept_distance()
+        if distance is not None and distance[0] <= cfg.meet_radius:
+            self._abort(f"Treffpunkt erreicht ({distance[0]:.1f} m)")
+            return
+
+        p = pursuit(m.intercept_trigger, pos, now, cfg)
+        m.intercept_pursuit = p
+
+        if p.t_meet is None:
+            self._abort("Trigger schneller als FSL – Nachfliegen unmöglich")
+            return
+
+        remaining = cfg.timeout - elapsed
+        need = p.t_meet + return_time(p.meet, cfg)
+        if need > remaining:
+            self._abort(f"Zeit reicht nicht: Treffen {p.t_meet:.0f} s + Rückflug "
+                        f"{need - p.t_meet:.0f} s > Rest {remaining:.0f} s")
+            return
+
+        self._set_status(f"FSL fliegt {p.mode}: Treffen in {p.t_meet:.0f} s "
+                         f"(Abstand entlang der Bahn {p.gap:.0f} m)")
+        self._send_reposition(p.meet, now)
+
+    def _send_reposition(self, meet, now):
+        last = self._last_reposition
+        if last is not None:
+            moved = math.hypot(meet[0] - last[1][0], meet[1] - last[1][1])
+            if moved < self.REPOSITION_MOVE and now - last[0] < self.REPOSITION_PERIOD:
+                return
+
+        connection = getattr(self.model, "connection", None)
+        master = getattr(connection, "master", None)
+        if master is None or not getattr(master, "target_system", 0):
+            return
+        lat, lon = enu_to_latlon(self.model.intercept_origin, meet[0], meet[1])
+        alt_amsl = (self.model.home_alt or 0.0) + meet[2]
+        connection.send(reposition_command(master.target_system, master.target_component,
+                                           lat, lon, alt_amsl, self._config().speed))
+        self._last_reposition = (now, meet)
+
+    # ------------------------------------------------------------
+    # Minimaler Abstand Trigger–FSL (gemessen)
+    # ------------------------------------------------------------
+    def _track_min_distance(self):
+        distance = self.model.intercept_distance()
+        if distance is None or self._flight_start is None:
+            return
+        current = self.model.intercept_min_distance
+        if current is None or distance[0] < current[0]:
+            self.model.intercept_min_distance = (distance[0], time.time() - self._flight_start)
+
+    def _min_distance_text(self):
+        md = self.model.intercept_min_distance
+        return f" – minimaler Abstand {md[0]:.1f} m nach {md[1]:.0f} s" if md else ""
 
     def _abort(self, reason):
         sub = self.model.hfsm_sub
@@ -251,7 +355,7 @@ class InterceptHFSM(BaseHFSM):
             self._set_status(f"{reason} – Start abgebrochen")
             return
 
-        if sub in ("START", "FLIGHT") or (sub == "IDLE" and self.model.px4_armed):
+        if sub in ("START", "APPROACH", "PURSUE") or (sub == "IDLE" and self.model.px4_armed):
             self._start_deadline = None
             self._send_rtl(reason)
             return

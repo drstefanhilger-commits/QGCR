@@ -252,7 +252,7 @@ class GUIController:
             return
 
         tab.set_enabled(trigger=in_intercept and sub == "IDLE" and fsl,
-                        abort=in_intercept and sub in ("UPLOAD", "START", "FLIGHT"),
+                        abort=in_intercept and sub in ("UPLOAD", "START", "APPROACH", "PURSUE"),
                         model_hint=in_intercept and sub == "IDLE" and not fsl)
 
         plan = m.intercept_plan
@@ -260,19 +260,29 @@ class GUIController:
             plan_text = "Plan: -"
         elif plan.reachable:
             e, n, u = plan.wait
-            plan_text = (f"Wartepunkt: Ost {e:.0f} m, Nord {n:.0f} m, Höhe {u:.0f} m\n"
-                         f"FSL dort nach {plan.t_fsl:.0f} s, Trigger nach {plan.t_trigger:.0f} s, "
-                         f"Warten {plan.hold:.0f} s, Kurs {plan.heading_deg:.0f}°")
+            trigger_at = (f"Trigger nach {plan.t_trigger:.0f} s" if plan.t_trigger >= 0
+                          else f"Trigger schon vor {-plan.t_trigger:.0f} s vorbei")
+            plan_text = (f"Wartepunkt (Lot auf Trigger-Bahn): Ost {e:.0f} m, Nord {n:.0f} m, "
+                         f"Höhe {u:.0f} m\n"
+                         f"FSL dort nach {plan.t_fsl:.0f} s, {trigger_at}, Kurs {plan.heading_deg:.0f}°\n"
+                         f"Erwartet: {plan.mode}, Treffen nach weiteren {plan.t_meet:.0f} s, "
+                         f"Flugzeit gesamt {plan.total:.0f} s")
         else:
             plan_text = f"Plan: {plan.reason}"
+        pursuit = m.intercept_pursuit
+        if in_intercept and sub == "PURSUE" and pursuit is not None and pursuit.t_meet is not None:
+            plan_text += f"\nAktuell: {pursuit.mode}, Treffen in {pursuit.t_meet:.0f} s"
 
         battery = f"{m.battery_remaining:.0f} %" if m.battery_remaining is not None else "-"
         flight = f"Akku: {battery}   Höhe: {m.vehicle_alt:.1f} m   Modus: {m.px4_mode}"
         distance = m.intercept_distance()
         if distance is not None:
             flight += f"\nAbstand Trigger–FSL: {distance[0]:.0f} m (horizontal {distance[1]:.0f} m)"
+        md = m.intercept_min_distance
+        min_distance = f"Min. Abstand: {md[0]:.1f} m (nach {md[1]:.0f} s)" if md else "Min. Abstand: -"
         model_hint = "" if fsl else f"\nModell {self.FSL_MODEL} erforderlich"
-        tab.show_status(f"{m.hfsm_main}/{sub}", f"{m.intercept_status}{model_hint}", plan_text, flight)
+        tab.show_status(f"{m.hfsm_main}/{sub}", f"{m.intercept_status}{model_hint}", plan_text, flight,
+                        min_distance)
 
         data = self.get_plot_data()
         tab.plot.draw(data)
@@ -303,6 +313,7 @@ class GUIController:
                 "circle": geometry["circle"],
                 "trigger_path": [p[:2] for p in geometry["trigger_path"]],
                 "wait": geometry["wait"][:2] if geometry["wait"] else None,
+                "meet": geometry["meet"][:2] if geometry.get("meet") else None,
                 "trigger_now": geometry["trigger_now"][:2] if geometry["trigger_now"] else None,
                 "trigger_distance": (m.intercept_distance() or (None,))[0],
                 "trigger_id": geometry["trigger_id"],

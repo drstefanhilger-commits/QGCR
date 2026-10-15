@@ -68,6 +68,8 @@ class FslTab(ttk.Frame):
         self.lbl_plan.pack(anchor="w", pady=2)
         self.lbl_flight = ttk.Label(info, text="Akku: -   Flugzeit: -")
         self.lbl_flight.pack(anchor="w")
+        self.lbl_min_distance = ttk.Label(info, text="Min. Abstand: -")
+        self.lbl_min_distance.pack(anchor="w", pady=(2, 0))
 
         right = ttk.Frame(self)
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -103,8 +105,9 @@ class FslTab(ttk.Frame):
         elif not model_hint and packed:
             self.btn_model.pack_forget()
 
-    def show_status(self, state, status, plan, flight):
+    def show_status(self, state, status, plan, flight, min_distance="Min. Abstand: -"):
         self.lbl_state["text"] = f"Zustand: {state}"
         self.lbl_status["text"] = status
         self.lbl_plan["text"] = plan
         self.lbl_flight["text"] = flight
+        self.lbl_min_distance["text"] = min_distance

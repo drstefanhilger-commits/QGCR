@@ -162,6 +162,8 @@ class Model:
         self.intercept_trigger = None      # model.intercept.Trigger
         self.intercept_plan = None         # model.intercept.InterceptPlan
         self.intercept_origin = None       # (lat, lon) des Startpunkts der Berechnung
+        self.intercept_pursuit = None      # model.intercept.Pursuit (laufende Entscheidung)
+        self.intercept_min_distance = None # (kleinster gemessener Abstand [m], Sekunden ab Start)
         self.intercept_config = None       # model.intercept.InterceptConfig (vom Tab)
         self.intercept_status = "-"
 
@@ -328,7 +330,8 @@ class Model:
         {"circle": ((lat, lon), radius_m), "trigger_path": [(lat, lon, alt), ...],
          "wait": (lat, lon, alt) | None,
          "trigger_now": (lat, lon, alt) | None,   # aktuelle Position (Zeitstempel + v·Δt)
-         "trigger_id": str, "trigger_heading": Kurs in Grad}
+         "trigger_id": str, "trigger_heading": Kurs in Grad,
+         "meet": (lat, lon, alt) | None}   # Treffpunkt (laufend bzw. geplant)
         trigger_now nur, solange der Trigger auf der gezeichneten Bahn ist.
         """
         from QGCR.model.intercept import enu_to_latlon
@@ -351,6 +354,10 @@ class Model:
             if 0.0 <= along <= length:
                 trigger_now = geo(now)
 
+        # Treffpunkt: laufende Berechnung, sonst Vorhersage der Planung
+        pursuit = self.intercept_pursuit
+        meet = pursuit.meet if pursuit is not None and pursuit.meet else plan.meet
+
         return {
             "circle": (origin, self.INTERCEPT_CIRCLE_M),
             "trigger_path": [geo(p) for p in plan.path],
@@ -358,6 +365,7 @@ class Model:
             "trigger_now": trigger_now,
             "trigger_id": trigger.drone_id if trigger else "",
             "trigger_heading": plan.heading_deg,
+            "meet": geo(meet) if meet else None,
         }
 
     def intercept_distance(self):

@@ -68,8 +68,9 @@ class TestViewPlot2D(unittest.TestCase):
 
     def test_draws_circle_trigger_path_and_wait(self):
         self.plot.draw(self.data(start=START, circle=(START, 200.0),
-                                 trigger_path=[NORTH_100M, EAST_100M], wait=EAST_100M))
-        for tag in ("circle", "trigger_path", "wait"):
+                                 trigger_path=[NORTH_100M, EAST_100M], wait=EAST_100M,
+                                 meet=NORTH_100M))
+        for tag in ("circle", "trigger_path", "wait", "meet"):
             with self.subTest(tag=tag):
                 self.assertTrue(self.tagged(tag))
 

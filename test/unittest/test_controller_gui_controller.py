@@ -334,6 +334,30 @@ class TestControllerGUIControllerFsl(unittest.TestCase):
         flight_text = window.fsl_tab.show_status.call_args[0][3]
         self.assertIn("Abstand Trigger–FSL: 100 m (horizontal 100 m)", flight_text)
 
+    def test_fsl_status_shows_min_distance_and_plan(self, _print):
+        from QGCR.model.intercept import InterceptConfig, plan_intercept
+        window = MagicMock()
+        self.gui.main_window = window
+        self.model.intercept_origin = (47.0, 8.0)
+        self.model.intercept_plan = plan_intercept(Trigger("T", 0, -150, 100, 20, 5, 0, 0), 0, InterceptConfig())
+        self.model.intercept_min_distance = (3.42, 61.0)
+
+        self.gui.update_fsl_tab()
+
+        args = window.fsl_tab.show_status.call_args[0]
+        self.assertIn("Lot auf Trigger-Bahn", args[2])
+        self.assertIn("Erwartet: nachfliegen", args[2])
+        self.assertEqual(args[4], "Min. Abstand: 3.4 m (nach 61 s)")
+
+    def test_plot_data_contains_meeting_point(self, _print):
+        from QGCR.model.intercept import InterceptConfig, Pursuit, plan_intercept
+        self.model.intercept_origin = (47.397971, 8.546164)
+        self.model.intercept_plan = plan_intercept(Trigger("T", 0, -150, 100, 20, 5, 0, 0), 0, InterceptConfig())
+        planned = self.gui.get_plot_data()["meet"]
+        self.assertEqual(len(planned), 2)
+        self.model.intercept_pursuit = Pursuit("entgegen", 50.0, 4.0, (-20.0, 100.0, 20.0))
+        self.assertNotEqual(self.gui.get_plot_data()["meet"], planned)  # laufende Berechnung
+
     def test_plot_data_with_intercept_geometry(self, _print):
         from QGCR.model.intercept import InterceptConfig, Trigger, plan_intercept
         self.model.intercept_origin = (47.397971, 8.546164)

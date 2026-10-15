@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from pymavlink import mavutil
 
-from QGCR.model.intercept import InterceptConfig, Trigger
+from QGCR.model.intercept import InterceptConfig, Trigger, enu_to_latlon
 from QGCR.sim.px4_swarm_starter import PX4InstanceConfig
 from QGCR.states.intercept.intercept_hfsm import InterceptHFSM
 from QGCR.states.main_state import MainState
@@ -62,7 +62,7 @@ class TestInterceptHFSM(unittest.TestCase):
         self.model.px4_armed = True
         self.model.px4_mode = "AUTO.MISSION"
         self.fsm.on_update()
-        self.assertEqual(self.model.hfsm_sub, "FLIGHT")
+        self.assertEqual(self.model.hfsm_sub, "APPROACH")
 
     # --------------------------------------------------------
     def test_enter(self):
@@ -89,14 +89,14 @@ class TestInterceptHFSM(unittest.TestCase):
         self.model.px4_armed = False                                    # gelandet
         self.assertEqual(self.fsm.on_update(), MainState.INTERCEPT)
         self.assertEqual(self.model.hfsm_sub, "IDLE")
-        self.assertEqual(self.model.intercept_status, "FSL gelandet")
+        self.assertTrue(self.model.intercept_status.startswith("FSL gelandet"))
         self.assertFalse(self.model.mission_running)
 
     def test_unreachable_trigger(self):
         self.trigger(east=-30, v_east=30)
         self.assertEqual(self.model.hfsm_sub, "IDLE")
         self.ms.upload.assert_not_called()
-        self.assertIn("kein Wartepunkt", self.model.intercept_status)
+        self.assertIn("Nachfliegen unmöglich", self.model.intercept_status)
 
     def test_wrong_model_rejected(self):
         self.model.vehicle_configs[0].model_name = "gz_rc_cessna"
@@ -107,7 +107,7 @@ class TestInterceptHFSM(unittest.TestCase):
     def test_only_one_trigger(self):
         self.fly()
         self.trigger(drone_id="T9")
-        self.assertEqual(self.model.hfsm_sub, "FLIGHT")
+        self.assertEqual(self.model.hfsm_sub, "APPROACH")
         self.assertEqual(self.ms.upload.call_count, 1)
 
     def test_abort_in_flight_sends_rtl(self):
@@ -118,8 +118,8 @@ class TestInterceptHFSM(unittest.TestCase):
         self.assertEqual(self.model.hfsm_sub, "RTL")
 
     def test_timeout_sends_rtl(self):
-        self.model.intercept_config = InterceptConfig(timeout=5)
         self.fly()
+        self.model.intercept_config = InterceptConfig(timeout=5)
         with patch("QGCR.states.intercept.intercept_hfsm.time.time", return_value=time.time() + 6):
             self.fsm.on_update()
         self.assertEqual(self.sent()[-1], M.MAV_CMD_NAV_RETURN_TO_LAUNCH)
@@ -176,6 +176,107 @@ class TestInterceptHFSM(unittest.TestCase):
         self.assertEqual(self.sent()[-1], M.MAV_CMD_NAV_RETURN_TO_LAUNCH)
         self.model.px4_armed = False
         self.assertEqual(self.fsm.on_update(), MainState.RESET)
+
+    # --------------------------------------------------------
+    # Wartepunkt → entgegen / nachfliegen
+    # --------------------------------------------------------
+    def move_fsl(self, east, north, up=20.0):
+        lat, lon = enu_to_latlon(self.model.intercept_origin, east, north)
+        self.model.vehicle_lat, self.model.vehicle_lon, self.model.vehicle_alt = lat, lon, up
+
+    def repositions(self):
+        return [c.args[0] for c in self.conn.send.call_args_list
+                if c.args[0].command == M.MAV_CMD_DO_REPOSITION]
+
+    def arrive(self, **trigger):
+        self.trigger(**trigger)
+        self.tick_until(lambda: self.model.hfsm_sub == "START")
+        self.model.px4_armed = True
+        self.model.px4_mode = "AUTO.MISSION"
+        self.fsm.on_update()
+        wait = self.model.intercept_plan.wait
+        self.move_fsl(wait[0] + 1.0, wait[1], wait[2])
+        self.fsm.on_update()
+
+    def test_arrival_at_wait_point_starts_pursuit(self):
+        self.fly()
+        self.move_fsl(0, 50)                                            # noch unterwegs
+        self.fsm.on_update()
+        self.assertEqual(self.model.hfsm_sub, "APPROACH")
+        wait = self.model.intercept_plan.wait
+        self.move_fsl(wait[0] + 1.0, wait[1], wait[2])
+        self.fsm.on_update()
+        self.assertEqual(self.model.hfsm_sub, "PURSUE")
+        self.assertEqual(len(self.repositions()), 1)
+
+    def test_head_on_when_trigger_before_wait_point(self):
+        self.arrive(east=-400)
+        p = self.model.intercept_pursuit
+        self.assertEqual(p.mode, "entgegen")
+        msg = self.repositions()[-1]
+        lat, lon = enu_to_latlon(self.model.intercept_origin, p.meet[0], p.meet[1])
+        self.assertEqual(msg.x, int(lat * 1e7))
+        self.assertEqual(msg.y, int(lon * 1e7))
+        self.assertLess(p.meet[0], 0)                                   # dem Trigger entgegen (Westen)
+        self.assertIn("entgegen", self.model.intercept_status)
+
+    def test_chase_when_trigger_passed_wait_point(self):
+        self.model.intercept_config = InterceptConfig(timeout=600)
+        self.arrive(east=-150, timestamp=time.time() - 40)              # Trigger schon bei +50 m
+        p = self.model.intercept_pursuit
+        self.assertEqual(p.mode, "nachfliegen")
+        self.assertGreater(p.meet[0], 50)
+        self.assertEqual(self.model.hfsm_sub, "PURSUE")
+
+    def test_reposition_not_repeated_without_change(self):
+        self.arrive(east=-400)
+        self.fsm.on_update()
+        self.fsm.on_update()
+        self.assertEqual(len(self.repositions()), 1)
+        with patch("QGCR.states.intercept.intercept_hfsm.time.time", return_value=time.time() + 3):
+            self.fsm.on_update()
+        self.assertEqual(len(self.repositions()), 2)
+
+    def test_meeting_returns_and_lands(self):
+        self.arrive(east=-400)
+        t = self.model.intercept_trigger
+        e, n, u = t.position_at(time.time())
+        self.move_fsl(e + 2.0, n, u)                                    # Positionen gleich
+        self.fsm.on_update()
+        self.assertEqual(self.sent()[-1], M.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+        self.assertEqual(self.model.hfsm_sub, "RTL")
+        self.assertIn("Treffpunkt erreicht", self.model.intercept_status)
+        d, _ = self.model.intercept_min_distance
+        self.assertLess(d, 3.0)
+        self.model.px4_armed = False
+        self.fsm.on_update()
+        self.assertIn("minimaler Abstand", self.model.intercept_status)
+
+    def test_not_enough_time_returns(self):
+        self.model.intercept_config = InterceptConfig(timeout=600)
+        self.arrive(east=-150, timestamp=time.time() - 40)
+        self.assertEqual(self.model.hfsm_sub, "PURSUE")
+        self.model.intercept_config = InterceptConfig(timeout=60)       # Rest-Timeout zu klein
+        self.fsm.on_update()
+        self.assertEqual(self.sent()[-1], M.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+        self.assertIn("Zeit reicht nicht", self.model.intercept_status)
+
+    def test_chase_impossible_returns(self):
+        self.model.intercept_config = InterceptConfig(timeout=600)
+        self.arrive(east=-150, timestamp=time.time() - 40)
+        t = self.model.intercept_trigger
+        t.v_east = 20.0                                                 # Trigger wird schneller
+        self.fsm.on_update()
+        self.assertEqual(self.sent()[-1], M.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+        self.assertIn("Nachfliegen unmöglich", self.model.intercept_status)
+
+    def test_min_distance_is_smallest_measured(self):
+        self.arrive(east=-400)
+        md1 = self.model.intercept_min_distance
+        self.assertIsNotNone(md1)
+        self.move_fsl(300, 100)                                         # weiter weg
+        self.fsm.on_update()
+        self.assertEqual(self.model.intercept_min_distance, md1)
 
     def test_reset_on_ground_is_immediate(self):
         self.model.hfsm_events.append("RESET")

@@ -227,7 +227,7 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 | `AIRBORNE` | `AirborneHFSM` | Enter: `model.takeoff.start()`, falls IDLE (TAKEOFF: `NAV_TAKEOFF` mit `param7` = Home-Höhe AMSL + 10 m, Position = aktuelle bzw. NaN; ohne bekannte Home-Höhe kein ARM). Tickt `model.takeoff`. `LAND` → `MAV_CMD_NAV_LAND` an der aktuellen Position (`hfsm_sub` LAND, PX4 AUTO.LAND); nach dem Aufsetzen disarmt PX4 → Takeoff-Service `reset()` → READY. `MISSION_START` (HomeTab „MISSION“) → AUTO.MISSION im Flug (`hfsm_sub` MISSION). Läuft eine Mission (auch vom Boden gestartet), startet AIRBORNE keinen eigenen Takeoff; endet sie mit Landung (PX4 disarmt) → READY. `RESET` im Flug: erst landen (NAV_LAND, `hfsm_sub` RESET_LAND), nach Landung + Disarm → RESET; nicht armed / kein PX4-Ziel → sofort; zweiter RESET während der Landung → sofort. Verbindung verloren → RESET |
 | `MISSION` | `MissionHFSM` | `MISSION_UPLOAD` / `MISSION_DOWNLOAD` im Worker-Thread (`hfsm_sub` UPLOAD / DOWNLOAD / IDLE), `MISSION_STOP` bricht den laufenden Transfer ab (Mission im Model bleibt). `MISSION_START` (Button „Start“) → `MAV_CMD_MISSION_START` (PX4 armt + AUTO.MISSION, `hfsm_sub` START); sobald armed und AUTO.MISSION → AIRBORNE mit `model.mission_running`, sonst nach 10 s Statusmeldung. Home-Tab aktiv → READY (nach laufendem Transfer), `RESET` → RESET, Verbindung verloren → RESET |
 | `RESET` | `ResetHFSM` | Enter: Takeoff zurücksetzen, PX4 stoppen (`startup_controller.stop_all()`), Backup, PX4-rootfs + `/tmp/px4-*`, `/tmp/gz-*` löschen, Heartbeat-Status verwerfen (`model.reset_heartbeat()`), `reset_done=True` → STARTUP |
-| `INTERCEPT` | `InterceptHFSM` | Tab „FSL“ (kontrollierte FSL-Drohne, siehe unten). IDLE → `INTERCEPT_TRIGGER` → Wartepunkt planen → UPLOAD → START → FLIGHT → (Timeout / Akku / `INTERCEPT_ABORT` → RTL) → gelandet → IDLE. Neue Trigger außerhalb von IDLE werden verworfen. Tab verlassen → READY (im Flug erst nach der Landung). RESET im Flug: erst RTL + Landung |
+| `INTERCEPT` | `InterceptHFSM` | Tab „FSL“ (kontrollierte FSL-Drohne, siehe unten). IDLE → `INTERCEPT_TRIGGER` → Wartepunkt planen → UPLOAD → START → APPROACH (zum Lot-Fußpunkt) → PURSUE (entgegen / nachfliegen per `DO_REPOSITION`) → (Treffen / Zeit reicht nicht / Nachflug unmöglich / Timeout / Akku / `INTERCEPT_ABORT` → RTL) → gelandet → IDLE. Neue Trigger außerhalb von IDLE werden verworfen. Tab verlassen → READY (im Flug erst nach der Landung). RESET im Flug: erst RTL + Landung |
 | `LOST` | `LostHFSM` | Platzhalter, bleibt in LOST (wird derzeit nicht angesteuert) |
 
 ```
@@ -258,13 +258,22 @@ sind die HomeTab-Buttons und die Modellauswahl gesperrt; mit anderem Modell biet
 
 - **Trigger (simuliert):** ID, Position Ost/Nord/Höhe [m] relativ zum FSL-Startpunkt,
   Geschwindigkeit Ost/Nord/Vertikal [m/s]; Zeitstempel = Absenden. Geschwindigkeit kurzfristig konstant.
-- **Wartepunkt** (`model/intercept.py`): frühester Punkt auf der geschätzten Bahn, den die FSL erreicht,
-  während der Trigger noch mindestens 10 m davor ist. Keine Entfernungsgrenze (der 200-m-Kreis im
-  Plot dient nur der Orientierung). Höhe = Höhe der Trigger-Bahn dort, mindestens 10 m.
-  Zeitmodell der FSL (SITL gemessen): 3 s Vorbereitung + 16 s bis Horizontalflug + Strecke /
-  (8 m/s × 0,92) + 4 s Abbremsen.
-- **Mission:** Takeoff 10 m → `DO_CHANGE_SPEED` → Wartepunkt → ggf. `NAV_LOITER_TIME` → 10 s dem Trigger
-  entgegen (auf seiner Bahn, gegen seine Flugrichtung) → `NAV_LAND` am Startpunkt. Start per `MAV_CMD_MISSION_START`.
+- **Wartepunkt** (`model/intercept.py`): nach dem Aufstieg kürzester Weg zur Trigger-Bahn
+  (Gerade durch Trigger-Position in Flugrichtung) = Lot-Fußpunkt vom FSL-Startpunkt. Keine
+  Entfernungsgrenze (der 200-m-Kreis im Plot dient nur der Orientierung). Höhe = Höhe der Trigger-Bahn
+  dort, mindestens 10 m. Zeitmodell der FSL (SITL gemessen): 3 s Vorbereitung + 16 s bis Horizontalflug
+  + Strecke / (8 m/s × 0,92) + 4 s Abbremsen.
+- **Mission:** Takeoff 10 m → `DO_CHANGE_SPEED` → Wartepunkt (Annahmeradius 1 m) → `NAV_LOITER_UNLIM`
+  → (für PX4 Pflicht) `NAV_LAND` am Startpunkt. Start per `MAV_CMD_MISSION_START`.
+- **Am Wartepunkt** (Sub-Zustand PURSUE, jeder Tick): Trigger hat den Punkt noch nicht erreicht →
+  **entgegen** fliegen, Treffzeit = Abstand / (v_Trigger + v_FSL); Trigger schon vorbei →
+  **nachfliegen**, Treffzeit = Abstand / (v_FSL − v_Trigger) (unmöglich, wenn der Trigger schneller ist).
+  Der Treffpunkt auf der Bahn wird per `MAV_CMD_DO_REPOSITION` (COMMAND_INT, Höhe AMSL) nachgeführt
+  (bei > 3 m Verschiebung, spätestens alle 2 s).
+- **Zurück und landen (RTL)**, wenn Abstand Trigger–FSL ≤ 5 m (Treffpunkt erreicht), wenn
+  Treffzeit + Rückflug (RTL: Steigen auf `RTL_RETURN_ALT` 60 m, Strecke, Sinken ≈ 1,35 m/s,
+  4 s + 10 s Reserve) > Rest-Timeout oder wenn Nachfliegen
+  unmöglich ist. Die Planung prüft dasselbe Budget schon beim Trigger (Plan „Zeit reicht nicht“).
 - **Überwachung:** Timeout (Default 180 s ab Start) oder Akku < Minimum (Default 30 %,
   `SYS_STATUS.battery_remaining`) bzw. „Abbrechen“ → RTL (`MAV_CMD_NAV_RETURN_TO_LAUNCH`).
   SITL: die simulierte Batterie fällt im Flug nur bis `SIM_BAT_MIN_PCT` (PX4-Default 50 %) und wird
@@ -272,8 +281,10 @@ sind die HomeTab-Buttons und die Modellauswahl gesperrt; mit anderem Modell biet
   Der SITL-Test `test_low_battery_triggers_rtl` setzt `SIM_BAT_MIN_PCT` vorübergehend auf 10 %
   (PX4 speichert Parameter dauerhaft; der Test setzt sie wieder auf 50 % zurück).
 - **Abstand Trigger–FSL:** laufend in der Statuszeile (3D und horizontal) und im 2D-Plot als
-  gestrichelte Linie zwischen Trigger-Symbol und FSL-Position.
-- **Anzeige:** 2D-Plot mit 200-m-Kreis, Trigger-Bahn (lila) und Wartepunkt (gelbe Raute);
+  gestrichelte Linie zwischen Trigger-Symbol und FSL-Position. **Min. Abstand:** eigene Zeile mit dem
+  kleinsten gemessenen 3D-Abstand und der Zeit ab Missionsstart; nach der Landung auch im Status.
+- **Anzeige:** 2D-Plot mit 200-m-Kreis, Trigger-Bahn (lila), Wartepunkt (gelbe Raute) und
+  Treffpunkt (rotes ⊕, geplant bzw. laufend berechnet);
   Gazebo: Start, Landung, Trigger-Bahn (lila Stab in Flughöhe) und Wartepunkt (gelbe Kugel).
   Beispiel: `docs/fsl_tab_intercept.png`
 
