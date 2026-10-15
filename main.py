@@ -143,6 +143,7 @@ class Application:
     def _update_loop(self):
         while not self._stop:
             try:
+                self.connection.process_pending()   # einziger Schreiber des Flugzustands
                 self.model.check_timeout()
                 self.ms_controller.tick()
                 self.main_controller.on_update()

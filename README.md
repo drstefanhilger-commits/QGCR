@@ -101,13 +101,20 @@ QGCR ist eine Tkinter-Bodenstation für PX4-SITL (Gazebo Harmonic). Der Systemzu
 High-Level-FSMs (HFSMs) gesteuert, die ein zentraler `MainController` tickt. GUI, Zustandslogik und
 MAVLink-Kommunikation laufen in getrennten Threads und tauschen Daten nur über das `Model` aus.
 
+**Single-Writer:** Den Flugzustand im Model ändert nur der Update-Thread. Der RX-Thread liest
+MAVLink nur und legt die Nachrichten in eine Queue; der Update-Thread verteilt sie über
+`connection.process_pending()` an Model und Dispatcher, bevor er die HFSM tickt. Die GUI liest das
+Model und schreibt nur Events (`hfsm_events`), `active_tab` und Eingaben wie Upload-Items/Modellwahl.
+
 ```
 PX4-SITL ──UDP 18570 → 14550──► Connection (udp:0.0.0.0:14550)
-                                 ├─ RX-Thread: HEARTBEAT / GLOBAL_POSITION_INT / HOME_POSITION / COMMAND_ACK → Model
-                                 │             STATUSTEXT → PX4-Log,  alle übrigen (+ COMMAND_ACK) → Dispatcher → MicroServices
+                                 ├─ RX-Thread: recv → Empfangs-Queue (sonst nichts)
                                  └─ GCS-Heartbeat-Thread (1 Hz) → PX4
 
-Update-Thread (20 Hz):  model.check_timeout() → MicroServiceController.tick() → MainController.on_update()
+Update-Thread (20 Hz):  connection.process_pending()
+                          HEARTBEAT / GLOBAL_POSITION_INT / HOME_POSITION / COMMAND_ACK → Model
+                          STATUSTEXT → PX4-Log,  alle übrigen (+ COMMAND_ACK) → Dispatcher → MicroServices
+                        → model.check_timeout() → MicroServiceController.tick() → MainController.on_update()
 Tk-Mainloop (GUI):      Buttons → GUIController.handle_button_event() → model.hfsm_events
                         gui_tick (500 ms): Log-Queues → LogTab,  Model → StatusBar
 ```
@@ -199,7 +206,8 @@ MainController(model, MAIN_STATE_MAP)   # states/main_state_map.py
 
 - startet in `STARTUP`, tickt pro `on_update()` genau die aktive HFSM
 - erzeugt bei jedem Wechsel eine **neue** HFSM-Instanz
-- globale Events vor jedem Tick: `TAKEOFF_DONE` → AIRBORNE, `RESET` → RESET (außer in AIRBORNE:
+- globale Events vor jedem Tick (gesucht wird in der ganzen Queue, nicht nur im ersten Element):
+  `TAKEOFF_DONE` → AIRBORNE, `RESET` → RESET (außer in AIRBORNE:
   dort landet die AirborneHFSM zuerst),
   `RESET_DONE` bzw. `model.reset_done` → STARTUP
 - beim Wechsel nach READY verwirft er alte `hfsm_events` – bevor `hfsm_main = READY` sichtbar wird,

@@ -1,9 +1,11 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/test_connection.py ===
 
+import threading
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.communication.connection import Connection
 from QGCR.test.unittest.fake_mavlink import make_msg, run_connection
 
 
@@ -52,6 +54,72 @@ class TestConnection(unittest.TestCase):
         conn.send("MSG")
         master.mav.send.assert_called_once_with("MSG")
         master.close.assert_called()
+
+
+class TestConnectionSingleWriter(unittest.TestCase):
+    """
+    RX-Thread liest nur; Model + Dispatcher werden erst in process_pending()
+    (Update-Thread) bedient.
+    """
+
+    def setUp(self):
+        self.model = DummyModel()
+        self.dispatcher = MagicMock()
+        self.msgs = [
+            make_msg("HEARTBEAT", base_mode=0, custom_mode=4 << 16, system_status=3),
+            make_msg("MISSION_COUNT", count=1),
+        ]
+
+    def connect_and_receive(self):
+        master = MagicMock()
+        master.target_system = 1
+        pending = list(self.msgs)
+
+        def recv_match(*a, **k):
+            if pending:
+                return pending.pop(0)
+            conn._stop = True
+            return None
+
+        master.recv_match.side_effect = recv_match
+        with patch("QGCR.communication.connection.mavutil.mavlink_connection", return_value=master):
+            conn = Connection(self.model, self.dispatcher)
+            conn.connect()
+            conn._rx_thread.join(2.0)
+        self.addCleanup(conn.close)
+        return conn
+
+    def test_rx_thread_does_not_touch_model(self):
+        self.connect_and_receive()
+
+        self.assertEqual(self.model.px4_heartbeat_count, 0)
+        self.dispatcher.dispatch.assert_not_called()
+
+    def test_process_pending_applies_in_calling_thread(self):
+        conn = self.connect_and_receive()
+        threads = []
+        self.dispatcher.dispatch.side_effect = lambda msg: threads.append(threading.current_thread())
+
+        self.assertEqual(conn.process_pending(), 2)
+
+        self.assertEqual(self.model.px4_heartbeat_count, 1)
+        self.assertEqual(threads, [threading.current_thread()])
+        self.assertEqual(conn.process_pending(), 0)
+
+    def test_clear_pending_drops_messages(self):
+        conn = self.connect_and_receive()
+        conn.clear_pending()
+
+        self.assertEqual(conn.process_pending(), 0)
+        self.assertEqual(self.model.px4_heartbeat_count, 0)
+
+    def test_error_in_one_message_does_not_stop_others(self):
+        self.msgs.insert(0, make_msg("COMMAND_ACK"))       # ohne command/result → Fehler im Model
+        conn = self.connect_and_receive()
+
+        with patch("builtins.print"):
+            self.assertEqual(conn.process_pending(), 3)
+        self.assertEqual(self.model.px4_heartbeat_count, 1)
 
 
 if __name__ == "__main__":

@@ -64,6 +64,28 @@ class TestControllerMainController(unittest.TestCase):
         self.ctrl.on_update()
         self.assertEqual(self.ctrl.active_state, MainState.RESET)
 
+    def test_reset_behind_unread_event_in_startup(self, _starter):
+        self.model.px4_connected = False                 # bleibt in STARTUP
+        self.ctrl.on_update()
+        self.model.hfsm_events.extend(["ARM", "RESET"])  # STARTUP liest ARM nie
+
+        self.ctrl.on_update()
+
+        self.assertIn("[QGCR] HFSM-Wechsel: STARTUP → RESET", self.model.qgcr_logs())
+        self.assertNotIn("RESET", self.model.hfsm_events)
+
+    def test_takeoff_done_in_airborne_keeps_hfsm(self, _starter):
+        self.ctrl.on_update()                            # → READY
+        self.model.hfsm_events.append("TAKEOFF")
+        self.ctrl.on_update()                            # → AIRBORNE
+        hfsm = self.ctrl.active_fsm
+
+        self.model.hfsm_events.append("TAKEOFF_DONE")
+        self.ctrl.on_update()
+
+        self.assertIs(self.ctrl.active_fsm, hfsm)        # nicht neu erzeugt
+        self.assertNotIn("TAKEOFF_DONE", self.model.hfsm_events)
+
     def test_stale_events_dropped_on_switch_to_ready(self, _starter):
         self.model.hfsm_events.append("TAKEOFF_ALT")     # Rest aus dem Vorzyklus
         self.ctrl.on_update()                            # STARTUP → READY

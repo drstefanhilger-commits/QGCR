@@ -36,26 +36,25 @@ class MainController:
             self._switch_to(MainState.STARTUP)
             return
 
-        if not self.model.hfsm_events:
-            return
+        # Ganze Queue durchsuchen (nicht nur das erste Element): ein Event, das
+        # der aktive Zustand nie liest (z. B. ARM in STARTUP), darf RESET nicht blockieren.
+        for event in list(self.model.hfsm_events):
+            if event == "TAKEOFF_DONE":
+                self.model.hfsm_events.remove(event)
+                if self.active_state != MainState.AIRBORNE:
+                    self._switch_to(MainState.AIRBORNE)
+                return
 
-        event = self.model.hfsm_events[0]   # Peek
+            # RESET im Flug übernimmt die AirborneHFSM (erst landen, dann RESET)
+            if event == "RESET" and self.active_state != MainState.AIRBORNE:
+                self.model.hfsm_events.remove(event)
+                self._switch_to(MainState.RESET)
+                return
 
-        if event == "TAKEOFF_DONE":
-            self.model.hfsm_events.popleft()
-            self._switch_to(MainState.AIRBORNE)
-            return
-
-        # RESET im Flug übernimmt die AirborneHFSM (erst landen, dann RESET)
-        if event == "RESET" and self.active_state != MainState.AIRBORNE:
-            self.model.hfsm_events.popleft()
-            self._switch_to(MainState.RESET)
-            return
-
-        if event == "RESET_DONE":
-            self.model.hfsm_events.popleft()
-            self._switch_to(MainState.STARTUP)
-            return
+            if event == "RESET_DONE":
+                self.model.hfsm_events.remove(event)
+                self._switch_to(MainState.STARTUP)
+                return
 
     # ------------------------------------------------------------
     # MAIN UPDATE

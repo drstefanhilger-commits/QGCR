@@ -6,6 +6,7 @@ import unittest
 from QGCR.communication.connection import Connection
 from QGCR.communication.dispatcher import Dispatcher
 from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.test.unittest.fake_mavlink import UpdatePump
 from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl
 
 
@@ -23,8 +24,10 @@ class TestPX4SITLHarness(unittest.TestCase):
         self.dispatcher = Dispatcher(self.model)
         self.connection = Connection(self.model, self.dispatcher)
         self.connection.connect()
+        self.pump = UpdatePump(self.connection).start()
 
     def tearDown(self):
+        self.pump.stop()
         self.connection.close()
         self.sitl.stop()
 

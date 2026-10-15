@@ -45,6 +45,11 @@ class TestResetHFSM(unittest.TestCase):
         self.assertIsNone(self.model.px4_vehicle_type)
         self.assertFalse(self.model.heartbeat_ok())
 
+    def test_reset_drops_pending_messages_of_old_px4(self):
+        self.model.connection = MagicMock()
+        self.fsm.on_update()
+        self.model.connection.clear_pending.assert_called_once()
+
     def test_reset_clears_mission_running(self):
         self.model.mission_running = True
         self.fsm.on_update()

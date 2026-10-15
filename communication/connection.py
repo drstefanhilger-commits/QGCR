@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/communication/connection.py ===
 
+import queue
 import time
 import threading
 from pymavlink import mavutil
@@ -9,7 +10,7 @@ class Connection:
     """
     MAVLink-Verbindung über UDP.
     - Bindet UDP-Port
-    - Startet RX-Thread
+    - Startet RX-Thread (liest nur, legt in Queue; Verarbeitung: process_pending())
     - Startet GCS-Heartbeat-Thread
     - KEIN wait_heartbeat() mehr (Heartbeat wird asynchron im Model/HFSM ausgewertet)
     """
@@ -23,6 +24,9 @@ class Connection:
 
         self._rx_thread = None
         self._gcs_hb_thread = None
+
+        # RX-Thread → Update-Thread (process_pending)
+        self._rx_queue = queue.Queue()
 
         self.udp_ip = "0.0.0.0"
         self.udp_port = 14550
@@ -57,55 +61,86 @@ class Connection:
 
     def _receive_loop(self):
         """
-        Liest MAVLink-Nachrichten und verteilt sie an Model + Dispatcher.
+        Liest MAVLink-Nachrichten und legt sie NUR in die Empfangs-Queue.
+        Verarbeitung (Model + Dispatcher) erfolgt im Update-Thread über
+        process_pending() – so ändert nur ein Thread den Flugzustand (Single-Writer).
         """
         while not self._stop:
             try:
                 msg = self.master.recv_match(blocking=True, timeout=1.0)
                 if msg is None:
                     continue
-
-                msg_type = msg.get_type()
-
-                if msg_type == "HEARTBEAT":
-                    self.model.update_ready_to_arm(msg)
-                    self.model.on_heartbeat(msg)
-
-                elif msg_type == "GLOBAL_POSITION_INT":
-                    self.model.update_vehicle_position(
-                        msg.lat / 1e7,
-                        msg.lon / 1e7,
-                        msg.relative_alt / 1000.0
-                    )
-
-                elif msg_type == "COMMAND_ACK":
-                    self.model.on_command_ack(msg)
-                    self.dispatcher.dispatch(msg)
-
-                elif msg_type == "HOME_POSITION":
-                    self.model.update_home_position(
-                        msg.latitude / 1e7,
-                        msg.longitude / 1e7,
-                        msg.altitude / 1000.0
-                    )
-                    
-                else:
-                    # PX4 STATUSTEXT → PX4-Logfenster
-                    if msg_type == "STATUSTEXT":
-                        txt = getattr(msg, "text", "")
-                        sev = getattr(msg, "severity", 0)
-                        if hasattr(self.model, "log"):
-                            self.model.log.px4(
-                                self.master.target_system,
-                                f"[STATUSTEXT:{sev}] {txt}"
-                            )
-
-                    # Restliche Nachrichten normal weiterleiten
-                    self.dispatcher.dispatch(msg)
+                self._rx_queue.put(msg)
 
             except Exception as e:
+                if self._stop:
+                    break
                 print("[Connection] Fehler im Empfangsloop:", e)
                 time.sleep(0.1)
+
+    def process_pending(self):
+        """
+        Alle empfangenen Nachrichten an Model + Dispatcher verteilen.
+        Wird vom Update-Thread vor jedem HFSM-Tick aufgerufen. Liefert die Anzahl.
+        """
+        count = 0
+        while True:
+            try:
+                msg = self._rx_queue.get_nowait()
+            except queue.Empty:
+                return count
+            try:
+                self._handle(msg)
+            except Exception as e:
+                print("[Connection] Fehler bei der Verarbeitung:", e)
+            count += 1
+
+    def clear_pending(self):
+        """Noch nicht verarbeitete Nachrichten verwerfen (z. B. nach RESET)."""
+        while True:
+            try:
+                self._rx_queue.get_nowait()
+            except queue.Empty:
+                return
+
+    def _handle(self, msg):
+        msg_type = msg.get_type()
+
+        if msg_type == "HEARTBEAT":
+            self.model.update_ready_to_arm(msg)
+            self.model.on_heartbeat(msg)
+
+        elif msg_type == "GLOBAL_POSITION_INT":
+            self.model.update_vehicle_position(
+                msg.lat / 1e7,
+                msg.lon / 1e7,
+                msg.relative_alt / 1000.0
+            )
+
+        elif msg_type == "COMMAND_ACK":
+            self.model.on_command_ack(msg)
+            self.dispatcher.dispatch(msg)
+
+        elif msg_type == "HOME_POSITION":
+            self.model.update_home_position(
+                msg.latitude / 1e7,
+                msg.longitude / 1e7,
+                msg.altitude / 1000.0
+            )
+
+        else:
+            # PX4 STATUSTEXT → PX4-Logfenster
+            if msg_type == "STATUSTEXT":
+                txt = getattr(msg, "text", "")
+                sev = getattr(msg, "severity", 0)
+                if hasattr(self.model, "log"):
+                    self.model.log.px4(
+                        self.master.target_system,
+                        f"[STATUSTEXT:{sev}] {txt}"
+                    )
+
+            # Restliche Nachrichten normal weiterleiten
+            self.dispatcher.dispatch(msg)
 
     def _gcs_heartbeat_loop(self):
         """

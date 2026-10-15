@@ -138,6 +138,11 @@ class ResetHFSM(BaseHFSM):
         try:
             if hasattr(self.model, "startup_controller"):
                 self.model.startup_controller = None
+            # noch nicht verarbeitete Nachrichten des alten PX4 verwerfen,
+            # sonst setzen alte Heartbeats den Status gleich wieder auf "verbunden"
+            connection = getattr(self.model, "connection", None)
+            if hasattr(connection, "clear_pending"):
+                connection.clear_pending()
             if hasattr(self.model, "reset_heartbeat"):
                 self.model.reset_heartbeat()
             self.model.mission_running = False

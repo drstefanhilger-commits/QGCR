@@ -1,5 +1,6 @@
 # === PFAD-B FULL FILE: QGCR/test/unittest/fake_mavlink.py ===
 
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -44,4 +45,32 @@ def run_connection(model, dispatcher, msgs, timeout=2.0):
         conn._rx_thread.join(timeout)
         conn.close()
 
+    # Rolle des Update-Threads: Empfangenes an Model + Dispatcher verteilen
+    conn.process_pending()
+
     return conn, master, mav_conn
+
+
+class UpdatePump:
+    """
+    Ersetzt in Tests ohne Application den Update-Thread:
+    ruft connection.process_pending() zyklisch auf (Single-Writer).
+    """
+
+    def __init__(self, connection, interval=0.01):
+        self.connection = connection
+        self.interval = interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            self.connection.process_pending()
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=2.0)

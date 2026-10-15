@@ -146,6 +146,24 @@ class TestMainApplicationInit(unittest.TestCase):
         starter.stop_all.assert_called_once()
         destroy.assert_called_once()
 
+    def test_update_loop_processes_messages_before_tick(self):
+        calls = []
+        self.app.connection = MagicMock()
+        self.app.connection.process_pending.side_effect = lambda: calls.append("pending")
+        self.app.model.check_timeout = lambda: calls.append("timeout")
+        self.app.ms_controller = MagicMock()
+        self.app.main_controller = MagicMock()
+        self.app.main_controller.on_update.side_effect = lambda: calls.append("hfsm")
+
+        def stop_after_one(_):
+            self.app._stop = True
+
+        with patch("QGCR.main.time.sleep", side_effect=stop_after_one):
+            self.app._stop = False
+            self.app._update_loop()
+
+        self.assertEqual(calls, ["pending", "timeout", "hfsm"])
+
     def test_cleanup_runs_first(self):
         self.cleanup.run_full_cleanup.assert_called_once()
 

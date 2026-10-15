@@ -9,6 +9,7 @@ from QGCR.communication.connection import Connection
 from QGCR.communication.dispatcher import Dispatcher
 from QGCR.communication.microservices.mission_microservice import MissionMicroService
 from QGCR.test.unittest.dummy_model import DummyModel
+from QGCR.test.unittest.fake_mavlink import UpdatePump
 from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl
 from QGCR.test.utils.mission_item_builder import make_waypoint
 
@@ -27,8 +28,10 @@ class TestPX4MissionMicroService(unittest.TestCase):
         self.conn = Connection(self.model, Dispatcher(self.model))
         self.model.connection = self.conn
         self.conn.connect()
+        self.pump = UpdatePump(self.conn).start()
 
     def tearDown(self):
+        self.pump.stop()
         self.conn.close()
         self.sitl.stop()
 

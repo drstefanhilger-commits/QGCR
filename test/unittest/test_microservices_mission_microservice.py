@@ -14,7 +14,7 @@ from QGCR.communication.connection import Connection
 from QGCR.communication.dispatcher import Dispatcher
 from QGCR.communication.microservices.mission_microservice import MissionMicroService
 from QGCR.test.unittest.dummy_model import DummyModel
-from QGCR.test.unittest.fake_mavlink import make_msg
+from QGCR.test.unittest.fake_mavlink import make_msg, UpdatePump
 from QGCR.test.utils.mission_item_builder import make_waypoint
 
 
@@ -236,8 +236,10 @@ class TestMissionMicroServiceWithConnection(unittest.TestCase):
             self.conn.connect()
 
         self.model.mission_ms = MissionMicroService(self.px4, 1, 1, timeout=2.0)
+        self.pump = UpdatePump(self.conn).start()
 
     def tearDown(self):
+        self.pump.stop()
         self.conn.close()
         self.conn._rx_thread.join(2)
 
