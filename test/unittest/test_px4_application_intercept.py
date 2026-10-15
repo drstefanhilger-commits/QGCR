@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from QGCR.main import Application
 from QGCR.model.intercept import enu_to_latlon
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose, assert_no_foreign_session
 
 
 @requires_sitl
@@ -27,6 +27,8 @@ class TestPX4ApplicationIntercept(unittest.TestCase):
         self._print = patch("builtins.print")
         self._print.start()
         self.tmp = tempfile.TemporaryDirectory()
+
+        assert_no_foreign_session()
 
         self.app = Application(model_name="gz_fsl_rocket_vtol")
         self.app.root.withdraw()

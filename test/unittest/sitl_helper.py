@@ -16,6 +16,28 @@ requires_sitl = unittest.skipUnless(
     "PX4-SITL-Test – aktivieren mit QGCR_SITL=1",
 )
 
+def assert_no_foreign_session():
+    """
+    SITL-Tests beenden PX4/Gazebo (und die Application räumt Port 14550 frei).
+    Läuft bereits eine QGCR-, PX4- oder Gazebo-Sitzung, wird abgebrochen statt beendet.
+    """
+    own = os.getpid()
+    found = []
+    for label, args in (("QGCR", ["-af", "--", r"-m QGCR\.main( |$)"]),
+                        ("PX4", ["-ax", "px4"]),
+                        ("Gazebo", ["-af", "^gz sim"])):
+        out = subprocess.run(["pgrep", *args], capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            pid = line.split(" ", 1)[0]
+            if pid.isdigit() and int(pid) != own:
+                found.append(f"{label} (PID {pid})")
+    if found:
+        raise RuntimeError(
+            "SITL-Test abgebrochen: laufende Sitzung gefunden – " + ", ".join(found)
+            + ". Bitte zuerst beenden; die Tests würden sie sonst beenden."
+        )
+
+
 # Port #0 (QGroundControl-Link): PX4 18570 → QGCR 14550
 GCS_URL = "udp:0.0.0.0:14550"
 
@@ -32,6 +54,7 @@ class PX4Sitl:
         self.process = None
 
     def start(self):
+        assert_no_foreign_session()
         self._kill_leftovers()
 
         env = os.environ.copy()

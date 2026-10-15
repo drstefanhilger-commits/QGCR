@@ -41,6 +41,9 @@
 
 Ubuntu 24.04 verbietet `pip install` ins System-Python (PEP 668), daher venv verwenden.
 
+Nur eine QGCR-Instanz: läuft bereits eine (`python3 -m QGCR.main`), bricht eine zweite mit
+„QGCR läuft bereits (PID …)“ ab – ihre Startup-Bereinigung würde sonst die laufende QGCR samt PX4 beenden.
+
 Beenden: Fenster schließen (X) oder Strg+C im Terminal – QGCR beendet dabei das von ihm gestartete
 PX4/Gazebo. PX4 erhält eine eigene stdin-Pipe, damit die PX4-Shell das Terminal nicht übernimmt.
 `tkinter` ist unter 24.04 nicht vorinstalliert.
@@ -81,7 +84,8 @@ python3 -m unittest discover -s QGCR/test/unittest -t . -v
 python3 -m pytest QGCR/test/pytest
 ```
 
-PX4-SITL-Tests (`test_px4_*.py`) starten PX4 + Gazebo headless und laufen nur mit `QGCR_SITL=1`:
+PX4-SITL-Tests (`test_px4_*.py`) starten PX4 + Gazebo headless und laufen nur mit `QGCR_SITL=1`.
+Läuft bereits eine QGCR-, PX4- oder Gazebo-Sitzung, brechen sie mit einer Meldung ab, statt sie zu beenden:
 
 ```bash
 QGCR_SITL=1 python3 -m unittest discover -s QGCR/test/unittest -t . -p "test_px4_*.py" -v

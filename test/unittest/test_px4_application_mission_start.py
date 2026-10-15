@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from QGCR.main import Application
 from QGCR.test.unittest.plan_fixture import write_flight_plan
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose, assert_no_foreign_session
 
 
 @requires_sitl
@@ -25,6 +25,7 @@ class TestPX4ApplicationMissionStart(unittest.TestCase):
     """
 
     def start_app(self, model_name):
+        assert_no_foreign_session()          # vor allen Patches: Abbruch ohne Aufräumfehler
         self._env = patch.dict(os.environ, {"HEADLESS": "1"})
         self._env.start()
         self._print = patch("builtins.print")
@@ -38,6 +39,8 @@ class TestPX4ApplicationMissionStart(unittest.TestCase):
         self.plan = write_flight_plan(model_name, directory=self.tmp.name)
 
     def tearDown(self):
+        if not hasattr(self, "app"):          # Abbruch vor dem Start (laufende Sitzung)
+            return
         self.app.shutdown()
         PX4Sitl._kill_leftovers()
         del self.app

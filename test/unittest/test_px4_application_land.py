@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from QGCR.main import Application
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, assert_no_foreign_session
 
 
 @requires_sitl
@@ -19,6 +19,7 @@ class TestPX4ApplicationLand(unittest.TestCase):
     """
 
     def start_app(self, model_name):
+        assert_no_foreign_session()          # vor allen Patches: Abbruch ohne Aufräumfehler
         self._env = patch.dict(os.environ, {"HEADLESS": "1"})
         self._env.start()
         self._print = patch("builtins.print")
@@ -32,6 +33,8 @@ class TestPX4ApplicationLand(unittest.TestCase):
         self.home = self.app.window.home_tab
 
     def tearDown(self):
+        if not hasattr(self, "app"):          # Abbruch vor dem Start (laufende Sitzung)
+            return
         self.app.shutdown()
         PX4Sitl._kill_leftovers()
         del self.app

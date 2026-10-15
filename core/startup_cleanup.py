@@ -113,6 +113,28 @@ class StartupCleanup:
             except Exception:
                 pass
 
+    # Kommandozeile einer laufenden QGCR-Instanz (python3 -m QGCR.main ...)
+    QGCR_PATTERN = r"-m QGCR\.main( |$)"
+
+    @staticmethod
+    def find_other_qgcr():
+        """
+        Andere laufende QGCR-Instanzen als [(pid, kommandozeile), ...] (eigener Prozess ausgenommen).
+        Die Bereinigung würde deren PX4 beenden und über Port 14550 sogar QGCR selbst.
+        """
+        try:
+            # "--": das Muster beginnt mit "-m" und darf nicht als pgrep-Option gelten
+            out = subprocess.run(["pgrep", "-af", "--", StartupCleanup.QGCR_PATTERN],
+                                 capture_output=True, text=True).stdout
+        except Exception:
+            return []
+        others = []
+        for line in out.splitlines():
+            pid, _, cmd = line.partition(" ")
+            if pid.isdigit() and int(pid) != os.getpid():
+                others.append((int(pid), cmd))
+        return others
+
     @staticmethod
     def run_full_cleanup():
         """

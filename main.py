@@ -46,6 +46,12 @@ class Application:
         if model_name not in Model.ALLOWED_MODELS:
             raise ValueError(f"Unbekanntes Modell '{model_name}', erlaubt: {Model.ALLOWED_MODELS}")
 
+        # Zweite Instanz: die Bereinigung würde die laufende QGCR samt PX4 beenden
+        others = StartupCleanup.find_other_qgcr()
+        if isinstance(others, list) and others:
+            pids = ", ".join(str(pid) for pid, _ in others)
+            raise RuntimeError(f"QGCR läuft bereits (PID {pids}) – bitte zuerst beenden")
+
         # ------------------------------------------------------------
         # Startup Cleanup (ALLE Ports + Prozesse + SHM)
         # ------------------------------------------------------------
@@ -256,7 +262,10 @@ class Application:
 
 if __name__ == "__main__":
     args = parse_args()
-    app = Application(model_name=args.model)
+    try:
+        app = Application(model_name=args.model)
+    except RuntimeError as e:
+        raise SystemExit(f"QGCR: {e}")
     try:
         app.root.mainloop()
     except KeyboardInterrupt:

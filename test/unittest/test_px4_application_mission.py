@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from QGCR.main import Application
 from QGCR.test.unittest.plan_fixture import write_plan
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, assert_no_foreign_session
 
 
 @requires_sitl
@@ -23,6 +23,8 @@ class TestPX4ApplicationMission(unittest.TestCase):
         self._env.start()
         self._print = patch("builtins.print")
         self._print.start()
+
+        assert_no_foreign_session()
 
         self.app = Application()
         self.app.root.withdraw()

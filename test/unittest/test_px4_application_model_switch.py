@@ -11,7 +11,7 @@ from unittest.mock import patch
 from pymavlink import mavutil
 
 from QGCR.main import Application
-from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose
+from QGCR.test.unittest.sitl_helper import PX4Sitl, requires_sitl, gz_model_pose, assert_no_foreign_session
 
 
 def count_procs(*pgrep_args):
@@ -32,6 +32,8 @@ class TestPX4ApplicationModelSwitch(unittest.TestCase):
         self._print = patch("builtins.print")
         self._print.start()
         self.tmp = tempfile.TemporaryDirectory()
+
+        assert_no_foreign_session()
 
         self.app = Application(model_name="gz_rc_cessna")
         self.app.root.withdraw()
